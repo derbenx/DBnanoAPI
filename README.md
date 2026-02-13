@@ -1,5 +1,6 @@
-You probably want the latest version of this script.<br>
+You probably want the latest version of this script. It's probably the least buggy.<br>
 You also need AHK AutoHotKey v2. https://www.autohotkey.com/download/<br>
+Internet is also required, images get uploaded to google servers. You can start a batch and go offline, the app will check once it's online again.<br>
 <br>
 NOTE: I have all the safety settings disabled, to enable, use any of the other settings; BLOCK_NONE, BLOCK_ONLY_HIGH, BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE<br>
 The more images get blocked the farther down the list you go. Despite the settings, google will block images automatically if it sets off a filter.<br>
@@ -50,6 +51,7 @@ Keep in mind, the AI will still likely make things up anyway, it's a bit of a fr
 <b>Images:</b><br>
 <img src="main.png"><br>
 <img src="batch.png"><br>
+
 
 
 
