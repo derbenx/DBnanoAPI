@@ -36,3 +36,8 @@ I can totally be encouraged to fix/upgrade things faster...<br>
   if you leave anything out, the AI will make something up.<br>
 <br>
 Keep in mind, the AI will still likey make things up any way, it's a bit of a free spirit.<br>
+
+
+
+
+<img src="main.png"><img src="batch.png">
