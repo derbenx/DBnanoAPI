@@ -47,12 +47,12 @@ I can totally be encouraged to fix/upgrade things faster...<br>
   backgrounds, foreground, subjects, camera shot (full body, portrait, etc) and so on.<br>
   if you leave anything out, the AI will make something up.<br>
 <br>
-Keep in mind, the AI will still likey make things up any way, it's a bit of a free spirit.<br>
+Keep in mind, the AI will still likely make things up anyway, it's a bit of a free spirit.<br>
+<br>
+<b>Images:</b><br>
+<img src="main.png"><br>
+<img src="batch.png"><br>
 
-
-
-
-<img src="main.png"><img src="batch.png">
 
 
 
