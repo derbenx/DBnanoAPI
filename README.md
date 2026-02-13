@@ -2,6 +2,8 @@ You probably want the latest version of this script.<br>
 You also need AHK AutoHotKey v2. https://www.autohotkey.com/download/<br>
 <br>
 NOTE: I have all the safety settings disabled, use any of the other ones to re-enable.
+Settings are; BLOCK_NONE, BLOCK_ONLY_HIGH, BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE, HARM_BLOCK_THRESHOLD_UNSPECIFIED<br>
+Despite the settings, google will block images automatically too if it sets off a filter.<br>
 <code>
         . '"safetySettings": ['
             . '{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, '
@@ -9,7 +11,7 @@ NOTE: I have all the safety settings disabled, use any of the other ones to re-e
             . '{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, '
             . '{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}'
 </code><br>
-Settings are; BLOCK_NONE, BLOCK_ONLY_HIGH, BLOCK_MEDIUM_AND_ABOVE, BLOCK_LOW_AND_ABOVE, HARM_BLOCK_THRESHOLD_UNSPECIFIED<br>
+
 <br>
 This AI image Editor/Generator was a collaboration between me and google gemini/jules.<br>
 It all started when I was asking about the nano banana and nano banana pro API and it offered to write a bat file.
@@ -51,5 +53,6 @@ Keep in mind, the AI will still likey make things up any way, it's a bit of a fr
 
 
 <img src="main.png"><img src="batch.png">
+
 
 
