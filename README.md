@@ -24,7 +24,7 @@ I can totally be encouraged to fix/upgrade things faster...<br>
 <b>Getting started:</b><br>
  Get your API key from google, see AHK source for URL, drop your key in the code and run the app.<br>
  "log in to https://aistudio.google.com/ create new project, then create an API key."<br>
-
+<br>
 <b>Usage:</b><br>
  Drag and drop images to edit OR click Generate to make an image from scratch.<br>
  Pick an image in the list or choose the GENERATE row.<br>
@@ -40,7 +40,7 @@ I can totally be encouraged to fix/upgrade things faster...<br>
  double click to edit the task popup on the task list.<br>
  Delete key deletes the selected image/task.<br>
  CTRL+r = reload, great for clearing the list.<br>
-
+<br>
 <b>** prompt help **</b><br>
  If you have multiple images, say a hat and a person, you can say stuff like "put the hat on the person".<br>
  If you ae making an image from scratch, make sure to let the AI know what you want to see;<br>
@@ -53,6 +53,7 @@ Keep in mind, the AI will still likey make things up any way, it's a bit of a fr
 
 
 <img src="main.png"><img src="batch.png">
+
 
 
 
