@@ -1590,8 +1590,8 @@ LogMessage(msg) {
     FileAppend(msg . "`n", logPath)
 }
 
-#HotIf WinActive("ahk_id " . MyGui.Hwnd)
-^r:: reload
+#HotIf WinActive("Gemini 2026 Pro Editor")
+^r:: Reload()
 $Del:: {
     FocusedCtrl := MyGui.FocusedCtrl
 
