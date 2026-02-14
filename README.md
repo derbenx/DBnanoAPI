@@ -62,12 +62,13 @@ Batch lets you queue up images on your task list to run when the GPUs at google 
 Batch is cheaper and can take up to 24h, but typically, if the batch is small and the servers aren't busy, it's much less<br>
 Batches are on a timer, the green bar. It automatically checks if the files are done as long as the app is open.<br>
 From my testing it's usually like 10-20 mins. 4K files take longer to make than 1K, in pro or flash.<br>
-Batch lookup numbers are also saved to disk, so you can close the app and come back later to download.
+Batch lookup numbers are also saved to disk, so you can close the app and come back later to download.<br>
 <br>
-*3 other APIs **
+*3 other APIs **<br>
  This script is only set up for the two it uses, but you can adapt it for more.<br>
-  Here are some of mine that it listed, you'll have to figure out how they work on your own or ask gemini.:<br>
- <code>
+ Here are some of mine that it listed, you'll have to figure out how they work on your own or ask google gemini.<br>
+ I think some of these could be chat API's, some say audio, veo I assume is video...
+<code>
 gemini-2.5-flash
 gemini-2.5-pro
 gemini-2.0-flash
@@ -118,10 +119,4 @@ gemini-2.5-flash-native-audio-preview-12-2025
 <b>Images:</b><br>
 <img src="main.png"><br>
 <img src="batch.png"><br>
-
-
-
-
-
-
 
