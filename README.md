@@ -28,7 +28,8 @@ I can totally be encouraged to fix/upgrade things faster...<br>
  Drag and drop images to edit OR click Generate to make an image from scratch.<br>
  Pick an image in the list or choose the GENERATE row.<br>
  Click the "add task" button<br>
- Fill out the popup info. The ratio defaults to the closest of the image. **<br>
+ Fill out the popup info. The ratio defaults to the closest of the image. *1<br>
+ Choose immediate or batch by radio select. *2<br>
  Click Run Immediate/Batch button, wait for the magic.<br>
  Check your img folder where you ran the script for new images.<br>
  Then repeat<br>
@@ -40,7 +41,7 @@ I can totally be encouraged to fix/upgrade things faster...<br>
  Delete key deletes the selected image/task.<br>
  CTRL+r = reload, great for clearing the list.<br>
 <br>
-<b>** prompt help **</b><br>
+<b>*1 prompt help **</b><br>
  If you have multiple images, say a hat and a person, you can say stuff like "put the hat on the person".<br>
  If you ae making an image from scratch, make sure to let the AI know what you want to see;<br>
   backgrounds, foreground, subjects, camera shot (full body, portrait, etc) and so on.<br>
@@ -48,13 +49,15 @@ I can totally be encouraged to fix/upgrade things faster...<br>
 <br>
 Keep in mind, the AI will still likely make things up anyway, it's a bit of a free spirit.<br>
 <br>
+<b>*2 immediate or batch? **</b><br>
+Immediate does the whole upload and recieve image in one go, one at a time. You can mix and match between flash and pro.<br>
+Batch lets you queue up images on your task list to run when the GPUs at google aren't busy, the list has to be all pro or all flash.<br>
+Batch is cheaper and can take up to 24h, but typically, if the batch is small and the servers aren't busy, it's much less<br>
+From my testing it's usually like 10-20 mins. 4K files take longer to make than 1K, in pro or flash.<br>
+<br>
 <b>Images:</b><br>
 <img src="main.png"><br>
 <img src="batch.png"><br>
-
-
-
-
 
 
 
