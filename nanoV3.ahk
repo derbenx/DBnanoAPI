@@ -10,10 +10,8 @@
 
 
 ; --- CONFIG ---
-
-; Constants {
-global useCurl := 0
-if (useCurl && !FileExist(A_ScriptDir "\curl.exe"))
+global useCurl := 1
+if (useCurl && !FileExist(A_ScriptDir . "\curl.exe") && !FileExist(A_WinDir . "\System32\curl.exe"))
     useCurl := 0
 global API_KEY := "USE YER OWN" ; log in to https://aistudio.google.com/ create new project, then create an API key.
 global hurl := "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -370,41 +368,29 @@ CleanupJobsFile() {
 
 CheckBatchStatus(jobID, targetRow) {
     global useCurl, API_KEY
+    if (useCurl) {
+        url := "https://generativelanguage.googleapis.com/v1beta/" . jobID . "?key=" . API_KEY
+        resFile := A_Temp . "\gemini_status_" . A_TickCount . ".json"
+        curlCmd := 'curl -s "' . url . '" -o "' . resFile . '"'
+        Run(curlCmd, , "Hide", &pid)
+        while ProcessExist(pid)
+            Sleep(50)
+        resText := FileRead(resFile)
+        FileDelete(resFile)
+        state := JSON_Get(resText, "state")
+        if (state == "SUCCEEDED" || state == "BATCH_STATE_SUCCEEDED") {
+            outputUri := JSON_Get(resText, "responsesFile")
+            return outputUri
+        }
+        return ""
+    }
+    whr := ComObject("WinHttp.WinHttpRequest.5.1")
     ; The jobID usually looks like "batches/12345..."
     url := "https://generativelanguage.googleapis.com/v1beta/" . jobID . "?key=" . API_KEY
 
     ModelLog.Value .= "`nChecking " . jobID
     SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
  try {
-    if (useCurl) {
-        resFile := A_Temp "\gemini_status_" . A_TickCount . ".json"
-        curlCmd := 'curl -s "' . url . '" -o "' . resFile . '"'
-        RunWait(curlCmd, , "Hide")
-        resText := FileRead(resFile)
-        FileDelete(resFile)
-
-        state := JSON_Get(resText, "state")
-        finishMsg := JSON_Get(resText, "candidates[0].finishMessage")
-        finishReason := JSON_Get(resText, "candidates[0].finishReason")
-
-        if (finishReason == "IMAGE_SAFETY" || finishMsg != "") {
-             errorReport := "`n[SAFETY BLOCK] " . jobID . ": " . finishMsg
-             ModelLog.Value .= errorReport . "`n"
-             LogMessage(errorReport . "`n")
-        }
-        ModelLog.Value .= "`n" . jobID . " is " . state
-        batView.Modify(targetRow, , , , state)
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
-        if (state == "SUCCEEDED" || state == "BATCH_STATE_SUCCEEDED") {
-            outputUri := JSON_Get(resText, "responsesFile")
-            ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Batch Complete! Downloading: " . outputUri
-            SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
-            return outputUri
-        }
-        return ""
-    }
-
-    whr := ComObject("WinHttp.WinHttpRequest.5.1")
     whr.Open("GET", url, false)
     ;whr.SetRequestHeader("Authorization", "Bearer " . API_KEY)
     whr.Send()
@@ -1014,14 +1000,14 @@ SetLoadingState(active) {
 }
 
 ProcessNextTask() {
-    global CurrentBatchIndex, ImageTaskMap, useCurl, PendingTasks
+    global useCurl, PendingTasks
+    global CurrentBatchIndex, ImageTaskMap
     TotalTasks := LV_Tasks.GetCount()
 
     if (CurrentBatchIndex >= TotalTasks) {
         SetTimer(ProcessNextTask, 0) ; // Stop the timer
-        if (!useCurl || PendingTasks == 0) {
+        if (!useCurl || PendingTasks == 0)
             ToggleUI(true)               ; // Re-enable buttons
-        }
         return
     }
 
@@ -1081,6 +1067,7 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         SplitPath fullPath, &nameWithExt, &dir, &ext, &nameNoExt
     }
 
+
     MODEL_ID := InStr(agent, "Flash") ? MODEL1 : MODEL2
     if (useCurl) {
         payload := CreateJsonPayload(taskObj, fullPath)
@@ -1089,20 +1076,17 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         if FileExist(payloadFile)
             FileDelete(payloadFile)
         FileAppend(payload, payloadFile, "UTF-8-RAW")
-
         apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
-
         curlCmd := 'curl -s -N -X POST "' . apiUrl . '" -H "Content-Type: application/json" -d "@' . payloadFile . '" -o "' . responseFile . '"'
-
         Run(curlCmd, , "Hide", &pid)
         global PendingTasks += 1
-
         CurlTimers[pid] := CheckCurlProgress.Bind(pid, responseFile, payloadFile, batchIdx, nameNoExt)
         SetTimer(CurlTimers[pid], 200)
         ModelLog.Value .= "`n[curl] Task " . batchIdx . " started (PID: " . pid . ")"
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
         return
     }
+
 
 
     try {
@@ -1303,29 +1287,27 @@ UploadBatchFile(FilePath) {
     offset := 0
     offset += StrPut(bodyStart, combinedBody, "UTF-8") - 1
     DllCall("RtlMoveMemory", "Ptr", combinedBody.Ptr + offset, "Ptr", fileData.Ptr, "Ptr", fileData.Size)
+
     offset += fileData.Size
     StrPut(bodyEnd, combinedBody.Ptr + offset, "UTF-8")
 
     if (useCurl) {
-        tempBodyFile := A_Temp "\gemini_upload_" . A_TickCount . ".bin"
-        resFile := A_Temp "\gemini_upload_res_" . A_TickCount . ".json"
+        tempBodyFile := A_Temp . "\gemini_upload_" . A_TickCount . ".bin"
+        resFile := A_Temp . "\gemini_upload_res_" . A_TickCount . ".json"
         FileOpen(tempBodyFile, "w", "cp0").RawWrite(combinedBody)
-
         url := "https://generativelanguage.googleapis.com/upload/v1beta/files?key=" . API_KEY
         curlCmd := 'curl -s -X POST "' . url . '" -H "X-Goog-Upload-Protocol: multipart" -H "Content-Type: multipart/related; boundary=' . boundary . '" --data-binary "@' . tempBodyFile . '" -o "' . resFile . '"'
-
-        ModelLog.Value .= "`n[curl] Uploading batch file..."
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
-        RunWait(curlCmd, , "Hide")
-
+        Run(curlCmd, , "Hide", &pid)
+        while ProcessExist(pid)
+            Sleep(50)
         resText := FileRead(resFile)
-        try { FileDelete(tempBodyFile) }
-        try { FileDelete(resFile) }
-
+        try FileDelete(tempBodyFile)
+        try FileDelete(resFile)
         if RegExMatch(resText, '"uri":\s*"([^"]+)"', &match)
             return match[1]
         throw Error("Curl Upload Failed: " . resText)
     }
+
 
     ; 3. THE FIX: Convert Buffer to a Safe COM Stream
     ; This prevents the "No such interface" error by providing a standard IStream interface
@@ -1361,21 +1343,19 @@ JSON_Get(jsonStr, key) {
 DownloadAndSaveBatch(outputUri) {
     global useCurl, API_KEY
     ; The URL that finally worked for you:
+
     finalUrl := "https://generativelanguage.googleapis.com/v1beta/" . outputUri . ":download?alt=media&key=" . API_KEY
 
     rawResponse := ""
     if (useCurl) {
-        resFile := A_Temp "\gemini_batch_res_" . A_TickCount . ".jsonl"
+        resFile := A_Temp . "\gemini_batch_res_" . A_TickCount . ".jsonl"
         curlCmd := 'curl -s "' . finalUrl . '" -o "' . resFile . '"'
-        RunWait(curlCmd, , "Hide")
+        Run(curlCmd, , "Hide", &pid)
+        while ProcessExist(pid)
+            Sleep(50)
         if FileExist(resFile) {
             rawResponse := FileRead(resFile)
             FileDelete(resFile)
-        }
-        if (rawResponse == "") {
-             ModelLog.Value .= "`n[ERROR] Curl Download failed or empty response."
-             SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
-             return
         }
     } else {
         whr := ComObject("WinHttp.WinHttpRequest.5.1")
@@ -1386,14 +1366,14 @@ DownloadAndSaveBatch(outputUri) {
         } catch Error as e {
             return
         }
-
         if (whr.Status != 200) {
             ModelLog.Value .= "`n[ERROR] Download failed: " . whr.Status
-            SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+            SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
             return
         }
         rawResponse := whr.ResponseText
     }
+
 
     if (DEBUG) {
         ;FileAppend("`n=== BATCH RESULT RECEIVED ===`n" . rawResponse . "`n============================`n", "debug.log")
@@ -1456,24 +1436,24 @@ Base64ToBin(Base64Str) {
 
 TestAPIConnection(*) {
     global useCurl, API_KEY
-    ;Status_Text.Value := "Fetching models..." ;
     ModelLog.Value .= "`nFetching models..."
-    SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
-    Prog_Bar.Value := 10 ;
+    SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+    Prog_Bar.Value := 10
 
     try {
         url := "https://generativelanguage.googleapis.com/v1beta/models?key=" . API_KEY
         responseText := ""
         status := 0
-
         if (useCurl) {
-            resFile := A_Temp "\gemini_models_" . A_TickCount . ".json"
+            resFile := A_Temp . "\gemini_models_" . A_TickCount . ".json"
             curlCmd := 'curl -s "' . url . '" -o "' . resFile . '"'
-            RunWait(curlCmd, , "Hide")
+            Run(curlCmd, , "Hide", &pid)
+        while ProcessExist(pid)
+            Sleep(50)
             if FileExist(resFile) {
                 responseText := FileRead(resFile)
                 FileDelete(resFile)
-                status := 200 ; Assume 200 if we got a file
+                status := 200
             }
         } else {
             whr := ComObject("WinHttp.WinHttpRequest.5.1")
@@ -1484,10 +1464,7 @@ TestAPIConnection(*) {
         }
 
         if (status == 200) {
-            Prog_Bar.Value := 100 ;
-            ;Status_Text.Value := "Models Found" ;
-
-            ; Parse names and format for the Edit Control
+            Prog_Bar.Value := 100
             modelList := ""
             pos := 1
             while (pos := RegExMatch(responseText, "`"name`":\s*`"models/([^`"]+)`"", &match, pos + 1)) {
@@ -1711,87 +1688,76 @@ IsIDInMergedID(id, mID) {
 
 
 
-CheckCurlProgress(pid, resFile, payFile, batchIdx, nameNoExt) {
-    global CurlTimers
-    static processed := Map()
-    if processed.Has(pid)
-        return
 
-    resText := ""
-    if FileExist(resFile) {
-        try {
-            resText := FileRead(resFile)
-        }
-    }
-
-    ; Image detection pattern
-    if RegExMatch(resText, 's)"data":\s*"([^"]+)"', &imgMatch) {
-        ProcessClose(pid) ; Kill curl to "drop the thought"
-        ProcessCurlResult(pid, resFile, payFile, batchIdx, nameNoExt, imgMatch[1], resText)
-        processed[pid] := true
-        if CurlTimers.Has(pid) {
-            SetTimer(CurlTimers[pid], 0)
-            CurlTimers.Delete(pid)
-        }
-        return
-    }
-
+; --- Async Curl Helpers ---
+CheckCurlProgress(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
     if !ProcessExist(pid) {
-        ; Process finished but no image found (or already handled)
-        if !processed.Has(pid) {
-             ; Final check
-             if RegExMatch(resText, 's)"data":\s*"([^"]+)"', &imgMatch) {
-                 ProcessCurlResult(pid, resFile, payFile, batchIdx, nameNoExt, imgMatch[1], resText)
-             } else {
-                 ModelLog.Value .= "`n[curl] Task " . batchIdx . " failed or no image data."
-                 LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
-                 CleanupCurlTask(pid, resFile, payFile)
-             }
-             processed[pid] := true
-             if CurlTimers.Has(pid) {
-                 SetTimer(CurlTimers[pid], 0)
-                 CurlTimers.Delete(pid)
-             }
+        ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt)
+        return
+    }
+
+    if FileExist(responseFile) {
+        try {
+            fileContent := FileRead(responseFile)
+            ; "Drop the stream": If we see the base64 data, we can stop
+            if InStr(fileContent, '"data":') {
+                ProcessClose(pid)
+                ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt)
+                return
+            }
         }
     }
 }
 
-ProcessCurlResult(pid, resFile, payFile, batchIdx, nameNoExt, b64Data, fullRes) {
-    try {
-        binData := Base64ToBin(b64Data)
-        finalExt := (InStr(fullRes, "image/png")) ? "png" : "jpg"
-        outPath := OutputDir "\" nameNoExt "_" A_Now "." finalExt
-        SaveBinaryImage(binData, outPath)
-
-        ModelLog.Value .= "`n[curl] Saved: " . outPath
-        LV_Tasks.Modify(batchIdx, "", , , , , "Success")
-    } catch Error as e {
-        ModelLog.Value .= "`n[curl] Error processing result: " . e.Message
-        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
-    }
-    CleanupCurlTask(pid, resFile, payFile)
-    SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
-}
-
-CleanupCurlTask(pid, resFile, payFile) {
-    global PendingTasks
-    PendingTasks -= 1
-    try {
-        if FileExist(resFile)
-            FileDelete(resFile)
-        if FileExist(payFile)
-            FileDelete(payFile)
+ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
+    if CurlTimers.Has(pid) {
+        SetTimer(CurlTimers[pid], 0)
+        CurlTimers.Delete(pid)
     }
 
-    ; If this was the last task and queue is done, re-enable UI
+    responseText := ""
+    if FileExist(responseFile) {
+        responseText := FileRead(responseFile)
+        FileDelete(responseFile)
+    }
+
+    if FileExist(payloadFile)
+        FileDelete(payloadFile)
+
+    global PendingTasks -= 1
+
+    if (responseText != "") {
+        if RegExMatch(responseText, 's)"data":\s*"([^"]+)"', &imgMatch) {
+            base64Data := imgMatch[1]
+            outPath := OutputDir . "\" . nameNoExt . "_res.png"
+
+            ; Decode base64 and save
+            try {
+                size := 0
+                if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", 0, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
+                    buf := Buffer(size)
+                    if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", buf, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
+                        FileOpen(outPath, "w").RawWrite(buf)
+                        ModelLog("Image saved: " . outPath)
+                    }
+                }
+            } catch as e {
+                ModelLog("Error decoding image: " . e.Message)
+            }
+        } else {
+            ModelLog("Curl response (no image): " . SubStr(responseText, 1, 200))
+        }
+    } else {
+        ModelLog("Curl task finished with no output.")
+    }
+
     CheckQueueCompletion()
 }
 
 CheckQueueCompletion() {
-    global PendingTasks, CurrentBatchIndex, LV_Tasks
-    if (PendingTasks == 0 && CurrentBatchIndex >= LV_Tasks.GetCount()) {
+    if (PendingTasks <= 0) {
+        PendingTasks := 0
         ToggleUI(true)
-        ModelLog.Value .= "`n[System] All tasks completed."
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+        ModelLog("All tasks completed.")
     }
 }
