@@ -24,6 +24,11 @@ I can totally be encouraged to fix/upgrade things faster...<br>
  Get your API key from google, see AHK source for URL, drop your key in the code and run the app.<br>
  "log in to https://aistudio.google.com/ create new project, then create an API key."<br>
 <br>
+<b>Never Used AHK?<b><br>
+if you install AHK program, you can run my AHK script just like a program.<br>
+If you run it portable (extracted AHK from a zip file), you drag my AHK you downloaded and drop it on AutoHotkey64.exe<br>
+You can also compile AHK scripts into their own *.exe file.
+<br>
 <b>Usage:</b><br>
  Drag and drop images to edit OR click Generate to make an image from scratch.<br>
  Pick an image in the list or choose the GENERATE row.<br>
@@ -113,6 +118,7 @@ gemini-2.5-flash-native-audio-preview-12-2025
 <b>Images:</b><br>
 <img src="main.png"><br>
 <img src="batch.png"><br>
+
 
 
 
