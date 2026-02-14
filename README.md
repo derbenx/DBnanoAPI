@@ -40,6 +40,8 @@ I can totally be encouraged to fix/upgrade things faster...<br>
  double click to edit the task popup on the task list.<br>
  Delete key deletes the selected image/task.<br>
  CTRL+r = reload, great for clearing the list.<br>
+ You can save and load your prompts to CSV files.
+ The test API key lists the AI models you can run on the key you provide. *3
 <br>
 <b>*1 prompt help **</b><br>
  If you have multiple images, say a hat and a person, you can say stuff like "put the hat on the person".<br>
@@ -53,11 +55,65 @@ Keep in mind, the AI will still likely make things up anyway, it's a bit of a fr
 Immediate does the whole upload and recieve image in one go, one at a time. You can mix and match between flash and pro.<br>
 Batch lets you queue up images on your task list to run when the GPUs at google aren't busy, the list has to be all pro or all flash.<br>
 Batch is cheaper and can take up to 24h, but typically, if the batch is small and the servers aren't busy, it's much less<br>
+Batches are on a timer, the green bar. It automatically checks if the files are done as long as the app is open.<br>
 From my testing it's usually like 10-20 mins. 4K files take longer to make than 1K, in pro or flash.<br>
+Batch lookup numbers are also saved to disk, so you can close the app and come back later to download.
 <br>
+*3 other APIs **
+ This script is only set up for the two it uses, but you can adapt it for more.<br>
+  Here are some of mine that it listed, you'll have to figure out how they work on your own or ask gemini.:<br>
+ <code>
+gemini-2.5-flash
+gemini-2.5-pro
+gemini-2.0-flash
+gemini-2.0-flash-001
+gemini-2.0-flash-exp-image-generation
+gemini-2.0-flash-lite-001
+gemini-2.0-flash-lite
+gemini-exp-1206
+gemini-2.5-flash-preview-tts
+gemini-2.5-pro-preview-tts
+gemma-3-1b-it
+gemma-3-4b-it
+gemma-3-12b-it
+gemma-3-27b-it
+gemma-3n-e4b-it
+gemma-3n-e2b-it
+gemini-flash-latest
+gemini-flash-lite-latest
+gemini-pro-latest
+gemini-2.5-flash-lite
+gemini-2.5-flash-image
+gemini-2.5-flash-preview-09-2025
+gemini-2.5-flash-lite-preview-09-2025
+gemini-3-pro-preview
+gemini-3-flash-preview
+gemini-3-pro-image-preview
+nano-banana-pro-preview
+gemini-robotics-er-1.5-preview
+gemini-2.5-computer-use-preview-10-2025
+deep-research-pro-preview-12-2025
+gemini-embedding-001
+aqa
+imagen-4.0-generate-preview-06-06
+imagen-4.0-ultra-generate-preview-06-06
+imagen-4.0-generate-001
+imagen-4.0-ultra-generate-001
+imagen-4.0-fast-generate-001
+veo-2.0-generate-001
+veo-3.0-generate-001
+veo-3.0-fast-generate-001
+veo-3.1-generate-preview
+veo-3.1-fast-generate-preview
+gemini-2.5-flash-native-audio-latest
+gemini-2.5-flash-native-audio-preview-09-2025
+gemini-2.5-flash-native-audio-preview-12-2025
+</code>
+
 <b>Images:</b><br>
 <img src="main.png"><br>
 <img src="batch.png"><br>
+
 
 
 
