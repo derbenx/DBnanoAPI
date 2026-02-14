@@ -45,9 +45,9 @@ You can also compile AHK scripts into their own *.exe file.<br>
  double click to edit the task popup on the task list.<br>
  Delete key deletes the selected image/task.<br>
  CTRL+r = reload, great for clearing the list.<br>
- You can save and load your prompts to CSV files.
- The test API key lists the AI models you can run on the key you provide. *3
-<br>
+ You can save and load your prompts to CSV files.<br>
+ The test API key lists the AI models you can run on the key you provide. *3<br>
+ <br>
 <b>*1 prompt help **</b><br>
  If you have multiple images, say a hat and a person, you can say stuff like "put the hat on the person".<br>
  If you ae making an image from scratch, make sure to let the AI know what you want to see;<br>
@@ -118,6 +118,7 @@ gemini-2.5-flash-native-audio-preview-12-2025
 <b>Images:</b><br>
 <img src="main.png"><br>
 <img src="batch.png"><br>
+
 
 
 
