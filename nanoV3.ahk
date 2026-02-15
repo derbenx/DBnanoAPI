@@ -1,13 +1,11 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
-
 ;Todo
 ; error handling and output to modellog
 ; config to use curl on with useCurl := 1
 ;  curl can drop a stream without downloading the thought.
 ; duplicate task Button
-
 
 ; --- CONFIG ---
 global API_KEY := "USE YER OWN" ; log in to https://aistudio.google.com/ create new project, then create an API key.
