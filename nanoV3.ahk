@@ -108,6 +108,9 @@ SaveCSV(*) {
     if (savePath == "")
         return
 
+    if !RegExMatch(savePath, "i)\.csv$")
+        savePath .= ".csv"
+
     try {
         fileObj := FileOpen(savePath, "w", "UTF-8")
 
@@ -1708,11 +1711,16 @@ CheckCurlProgress(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
     if FileExist(responseFile) {
         try {
             fileContent := FileRead(responseFile)
-            ; "Drop the stream": If we see the base64 data, we can stop
-            if InStr(fileContent, '"data":') {
-                ProcessClose(pid)
-                ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt)
-                return
+            ; "Drop the stream": Wait until the "data" field is closed by a quote
+            ; Use InStr for performance on large stream files
+            if (p1 := InStr(fileContent, '"data":')) {
+                if (p2 := InStr(fileContent, '"', , p1 + 7)) {
+                    if (p3 := InStr(fileContent, '"', , p2 + 1)) {
+                        ProcessClose(pid)
+                        ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt)
+                        return
+                    }
+                }
             }
         }
     }
@@ -1737,32 +1745,45 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
         global PendingTasks -= 1
 
         if (responseText != "") {
-            if RegExMatch(responseText, 's)"data":\s*"([^"]+)"', &imgMatch) {
-                base64Data := imgMatch[1]
-                ; Match original naming convention more closely
-                outPath := OutputDir . "\" . nameNoExt . "_" . A_Now . ".png"
+            ; Use InStr/SubStr for robust extraction from potentially huge JSON strings
+            p1 := InStr(responseText, '"data":')
+            if (p1) {
+                p2 := InStr(responseText, '"', , p1 + 7)
+                p3 := InStr(responseText, '"', , p2 + 1)
+                if (p2 && p3) {
+                    base64Data := SubStr(responseText, p2 + 1, p3 - p2 - 1)
 
-                ; Decode base64 and save
-                try {
-                    size := 0
-                    if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", 0, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
-                        buf := Buffer(size)
-                        if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", buf, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
-                            FileOpen(outPath, "w").RawWrite(buf)
-                            ModelLogMsg("Image saved: " . outPath)
-                            LV_Tasks.Modify(batchIdx, "", , , , , "Success")
+                    ; Detect extension
+                    mime := "image/png"
+                    if RegExMatch(responseText, '"mimeType":\s*"([^"]+)"', &mimeMatch)
+                        mime := mimeMatch[1]
+                    ext := (InStr(mime, "jpeg") || InStr(mime, "jpg")) ? "jpg" : "png"
+
+                    outPath := OutputDir . "\" . nameNoExt . "_" . A_Now . "." . ext
+
+                    try {
+                        size := 0
+                        if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", 0, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
+                            buf := Buffer(size)
+                            if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", buf, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
+                                FileOpen(outPath, "w").RawWrite(buf)
+                                ModelLogMsg("Image saved: " . outPath)
+                                LV_Tasks.Modify(batchIdx, "", , , , , "Success")
+                            }
                         }
+                    } catch as e {
+                        ModelLogMsg("Error decoding image: " . e.Message)
+                        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                     }
-                } catch as e {
-                    ModelLogMsg("Error decoding image: " . e.Message)
+                } else {
+                    ModelLogMsg("Could not find complete image data in curl response.")
                     LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                 }
             } else {
-                ; Check for safety/finish reason in stream
                 if InStr(responseText, "finishReason") {
-                    ModelLogMsg("Curl task " . batchIdx . " was blocked or failed. Content: " . SubStr(responseText, 1, 500))
+                    ModelLogMsg("Curl task " . batchIdx . " was blocked or failed.")
                 } else {
-                    ModelLogMsg("Curl response (no image): " . SubStr(responseText, 1, 200))
+                    ModelLogMsg("Curl response (no image data).")
                 }
                 LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
             }
@@ -1778,6 +1799,7 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
 }
 
 CheckQueueCompletion() {
+    global PendingTasks
     if (PendingTasks <= 0) {
         PendingTasks := 0
         ToggleUI(true)
