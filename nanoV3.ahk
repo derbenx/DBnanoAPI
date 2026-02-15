@@ -10,9 +10,6 @@
 
 
 ; --- CONFIG ---
-global useCurl := 1
-if (useCurl && !FileExist(A_ScriptDir . "\curl.exe") && !FileExist(A_WinDir . "\System32\curl.exe"))
-    useCurl := 0
 global API_KEY := "USE YER OWN" ; log in to https://aistudio.google.com/ create new project, then create an API key.
 global hurl := "https://generativelanguage.googleapis.com/v1beta/models/"
 global OutputDir := A_ScriptDir "\img"
@@ -28,6 +25,7 @@ global CheckInterval := 300000 ; 5 minute timer, don't trigger rate limits.
 ; } These don't change in program.
 
 ; Variables {
+global useCurl := 1
 global CurrentMonitorIndex := 1
 global imgw := 395
 global imgh := 200
@@ -101,8 +99,15 @@ batBar := MyGui.Add("Progress", "x20 y480 w" . imgw*2+20 . " h15 cGreen", 0)
 Tab.UseTab()
 global ModelLog := MyGui.Add("Edit", "xm y500 w" . imgw*2+40 . " r5 +ReadOnly +vModelLog", "")
 MyGui.Show()
+
 ModelLogMsg("Networking initialized. useCurl=" . useCurl . " (1=curl, 0=WinHttp)")
 SetTimer(LoadExistingJobs, -500)
+if (useCurl && !FileExist(A_ScriptDir . "\curl.exe") && !FileExist(A_WinDir . "\System32\curl.exe")) {
+    useCurl := 0
+    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Cannot find curl.exe using standard mode."
+} else {
+    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Found curl.exe using curl mode."
+}
 
 SaveCSV(*) {
     savePath := FileSelect("S16", A_ScriptDir, "Save Task Configuration", "CSV (*.csv)")
