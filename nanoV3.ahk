@@ -293,7 +293,7 @@ LoadExistingJobs() {
     ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Found Jobs:" . foundList
     SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
 
-    global NextCheckTime := A_TickCount + + CheckInterval
+    global NextCheckTime := A_TickCount
     SetTimer(UpdateMonitorProgress, 1000)
 }
 
@@ -1202,7 +1202,8 @@ UpdateMonitorProgress() {
         jobList := []
         Loop batView.GetCount() {
             status := batView.GetText(A_Index, 2)
-            if (status == "Submitted" || status == "Checking..." || status == "Processing..." || status == "ACTIVE" || status == "RUNNING") {
+            ; Include "UNKNOWN" so we retry failed status checks
+            if (status == "Submitted" || status == "Checking..." || status == "Processing..." || status == "ACTIVE" || status == "RUNNING" || status == "UNKNOWN") {
                 jobList.Push({row: A_Index, id: batView.GetText(A_Index, 1)})
             }
         }
@@ -1211,6 +1212,7 @@ UpdateMonitorProgress() {
             if (CurrentMonitorIndex > jobList.Length) {
                 CurrentMonitorIndex := 1
                 NextCheckTime := A_TickCount + CheckInterval
+                batBar.Value := 0
                 ModelLogMsg("Batch monitor: Round complete. Next check in " . CheckInterval//1000 . "s")
                 return
             }
@@ -1220,8 +1222,13 @@ UpdateMonitorProgress() {
             CurrentMonitorIndex += 1
         } else {
             SetTimer(UpdateMonitorProgress, 0)
-            ModelLogMsg("Batch monitor: No active jobs. Stopping.")
+            batBar.Value := 0
+            ModelLogMsg("Batch monitor: No active jobs. Polling stopped.")
         }
+    } else {
+        ; Update progress bar
+        pct := (1 - (remaining / CheckInterval)) * 100
+        batBar.Value := pct
     }
 }
 
@@ -1275,7 +1282,10 @@ ProcessBatchStatus(pid, resFile, jobID, targetRow) {
 
 HandleBatchStatus(responseText, jobID, targetRow) {
     state := JSON_Get(responseText, "state")
-    if (state == "") state := "UNKNOWN"
+    if (state == "") {
+        state := "UNKNOWN"
+        LogMessage("HandleBatchStatus: state was empty. Response: " . responseText)
+    }
 
     batView.Modify(targetRow, "", , state)
     LogMessage("Job " . jobID . " state: " . state)
@@ -1349,7 +1359,7 @@ HandleBatchDownload(rawResponse, targetRow) {
     batView.Modify(targetRow, "", , "Success", , "100%")
 
     count := 0
-    Loop Parse, rawResponse, "r" {
+    Loop Parse, rawResponse, "`n", "`r" {
         line := Trim(A_LoopField)
         if (line == "") continue
 
@@ -1365,10 +1375,16 @@ HandleBatchDownload(rawResponse, targetRow) {
 
         if (fn != "" && b64 != "") {
             SplitPath(fn, &justFileName)
+
+            ; Detect extension
+            ext := "jpg"
+            if RegExMatch(line, '"mimeType":\s*"([^"]+)"', &me)
+                ext := (InStr(me[1], "png")) ? "png" : "jpg"
+
             binData := Base64ToBin(b64)
-            outPath := OutputDir . "\Batch_" . A_TickCount . "_" . justFileName
-            if !RegExMatch(outPath, "i)\.(jpg|png)$")
-                outPath .= ".jpg"
+            outPath := OutputDir . "\\Batch_" . A_Now . "_" . count+1 . "_" . justFileName
+            if !RegExMatch(outPath, "i)\\.(jpg|png)$")
+                outPath .= "." . ext
 
             SaveBinaryImage(binData, outPath)
             count++
@@ -1379,6 +1395,8 @@ HandleBatchDownload(rawResponse, targetRow) {
 }
 JSON_Get(jsonStr, key) {
     if RegExMatch(jsonStr, '"' . key . '":\s*"([^"]+)"', &match)
+        return match[1]
+    if RegExMatch(jsonStr, '"' . key . '":\s*([-+]?\d*\.?\d+)', &match)
         return match[1]
     return ""
 }
@@ -1495,7 +1513,7 @@ ClearFinishedJobs(*) {
         status := batView.GetText(idx, 2) ; Column 2 is "Status"
 
         ; Check for every possible "finished" string state
-        if (status == "Success" || status == "Failed" || status == "SUCCEEDED" || status == "BATCH_STATE_SUCCEEDED") {
+        if (status == "Success" || status == "Failed" ) {
             batView.Delete(idx)
         }
         idx-- ; Manually move to the next item up
@@ -1764,7 +1782,7 @@ CleanupJobsFile() {
         jobID  := batView.GetText(A_Index, 1)
         status := batView.GetText(A_Index, 2)
 
-        isFinished := (status == "Success" || status == "Failed" || status == "SUCCEEDED" || status == "BATCH_STATE_SUCCEEDED" || status == "FAILED" || status == "CANCELLED")
+        isFinished := (status == "Success" || status == "Failed"  || status == "FAILED" || status == "CANCELLED")
 
         if (!isFinished) {
             outString .= jobID . "`n"
