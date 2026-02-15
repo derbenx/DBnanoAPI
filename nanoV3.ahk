@@ -1689,6 +1689,15 @@ IsIDInMergedID(id, mID) {
 
 
 
+ModelLogMsg(txt) {
+    global ModelLog
+    try {
+        timestamp := FormatTime(, "HH:mm:ss")
+        ModelLog.Value .= "`n[" . timestamp . "] " . txt
+        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+    }
+}
+
 ; --- Async Curl Helpers ---
 CheckCurlProgress(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
     if !ProcessExist(pid) {
@@ -1710,45 +1719,59 @@ CheckCurlProgress(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
 }
 
 ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
-    if CurlTimers.Has(pid) {
-        SetTimer(CurlTimers[pid], 0)
-        CurlTimers.Delete(pid)
-    }
+    try {
+        if CurlTimers.Has(pid) {
+            SetTimer(CurlTimers[pid], 0)
+            CurlTimers.Delete(pid)
+        }
 
-    responseText := ""
-    if FileExist(responseFile) {
-        responseText := FileRead(responseFile)
-        FileDelete(responseFile)
-    }
+        responseText := ""
+        if FileExist(responseFile) {
+            responseText := FileRead(responseFile)
+            FileDelete(responseFile)
+        }
 
-    if FileExist(payloadFile)
-        FileDelete(payloadFile)
+        if FileExist(payloadFile)
+            FileDelete(payloadFile)
 
-    global PendingTasks -= 1
+        global PendingTasks -= 1
 
-    if (responseText != "") {
-        if RegExMatch(responseText, 's)"data":\s*"([^"]+)"', &imgMatch) {
-            base64Data := imgMatch[1]
-            outPath := OutputDir . "\" . nameNoExt . "_res.png"
+        if (responseText != "") {
+            if RegExMatch(responseText, 's)"data":\s*"([^"]+)"', &imgMatch) {
+                base64Data := imgMatch[1]
+                ; Match original naming convention more closely
+                outPath := OutputDir . "\" . nameNoExt . "_" . A_Now . ".png"
 
-            ; Decode base64 and save
-            try {
-                size := 0
-                if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", 0, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
-                    buf := Buffer(size)
-                    if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", buf, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
-                        FileOpen(outPath, "w").RawWrite(buf)
-                        ModelLog("Image saved: " . outPath)
+                ; Decode base64 and save
+                try {
+                    size := 0
+                    if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", 0, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
+                        buf := Buffer(size)
+                        if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", buf, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
+                            FileOpen(outPath, "w").RawWrite(buf)
+                            ModelLogMsg("Image saved: " . outPath)
+                            LV_Tasks.Modify(batchIdx, "", , , , , "Success")
+                        }
                     }
+                } catch as e {
+                    ModelLogMsg("Error decoding image: " . e.Message)
+                    LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                 }
-            } catch as e {
-                ModelLog("Error decoding image: " . e.Message)
+            } else {
+                ; Check for safety/finish reason in stream
+                if InStr(responseText, "finishReason") {
+                    ModelLogMsg("Curl task " . batchIdx . " was blocked or failed. Content: " . SubStr(responseText, 1, 500))
+                } else {
+                    ModelLogMsg("Curl response (no image): " . SubStr(responseText, 1, 200))
+                }
+                LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
             }
         } else {
-            ModelLog("Curl response (no image): " . SubStr(responseText, 1, 200))
+            ModelLogMsg("Curl task " . batchIdx . " finished with no output.")
+            LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
         }
-    } else {
-        ModelLog("Curl task finished with no output.")
+    } catch as e {
+        ModelLogMsg("Critical error in ProcessCurlResult: " . e.Message)
     }
 
     CheckQueueCompletion()
@@ -1758,6 +1781,6 @@ CheckQueueCompletion() {
     if (PendingTasks <= 0) {
         PendingTasks := 0
         ToggleUI(true)
-        ModelLog("All tasks completed.")
+        ModelLogMsg("All tasks completed.")
     }
 }
