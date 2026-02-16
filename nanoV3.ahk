@@ -559,17 +559,13 @@ RefreshTaskTable() {
     LV_Tasks.ModifyCol(8, 0) ; Keep hidden
 }
 
-SubmitBatchJob(fileUri) {
-    global useCurl, API_KEY
-    selectedModel := Radio_Immediate.Value ? MODEL1 : MODEL2
+AsyncSubmitBatchJob(fileUri, selectedModel) {
+    global useCurl, API_KEY, CurlTimers
     apiUrl := "https://generativelanguage.googleapis.com/v1beta/models/" . selectedModel . ":batchGenerateContent?key=" . API_KEY
 
     RegExMatch(fileUri, "files/[^/`"]+", &match)
     fileId := match ? match[0] : fileUri
     payload := '{ "batch": { "input_config": { "file_name": "' . fileId . '" } } }'
-
-    responseText := ""
-    status := 0
 
     if (useCurl) {
         resFile := A_Temp . "\gemini_batch_sub_" . A_TickCount . ".json"
@@ -578,53 +574,96 @@ SubmitBatchJob(fileUri) {
 
         curlCmd := 'curl -s -X POST "' . apiUrl . '" -H "Content-Type: application/json" -d "@' . payloadFile . '" -o "' . resFile . '"'
         Run(curlCmd, , "Hide", &pid)
-        while ProcessExist(pid)
-            Sleep(50)
-
-        if FileExist(resFile) {
-            responseText := FileRead(resFile)
-            status := 200
-            FileDelete(resFile)
-        }
-        if FileExist(payloadFile)
-            FileDelete(payloadFile)
-
-        if (InStr(responseText, '"error"'))
-            status := 400
+        cb := ProcessBatchSubCurl.Bind(pid, resFile, payloadFile)
+        CurlTimers[pid] := cb
+        SetTimer(cb, 100)
     } else {
         whr := ComObject("WinHttp.WinHttpRequest.5.1")
         whr.SetTimeouts(30000, 60000, 600000, 600000)
-        whr.Open("POST", apiUrl, false)
+        whr.Open("POST", apiUrl, true) ; Async
         whr.SetRequestHeader("Content-Type", "application/json")
         whr.Send(payload)
-        status := whr.Status
-        responseText := whr.ResponseText
+        SetTimer(CheckWinHttpSub.Bind(whr), 100)
+    }
+}
+
+ProcessBatchSubCurl(pid, resFile, payloadFile) {
+    if ProcessExist(pid)
+        return
+
+    global CurlTimers
+    if CurlTimers.Has(pid) {
+        SetTimer(CurlTimers[pid], 0)
+        CurlTimers.Delete(pid)
     }
 
-    if (status != 200 || InStr(responseText, '"error"'))
-        throw Error("Batch Submission Failed (" . status . "): " . responseText)
+    resText := ""
+    if FileExist(resFile) {
+        resText := FileRead(resFile)
+        FileDelete(resFile)
+    }
+    if FileExist(payloadFile)
+        FileDelete(payloadFile)
 
+    if (resText == "" || InStr(resText, '"error"')) {
+        BatchError("Batch Submission Failed: " . resText)
+    } else {
+        FinishBatchSubmission(resText)
+    }
+}
+
+CheckWinHttpSub(whr) {
+    if (whr.ReadyState != 4)
+        return
+
+    SetTimer(, 0)
+    if (whr.Status == 200 && !InStr(whr.ResponseText, '"error"')) {
+        FinishBatchSubmission(whr.ResponseText)
+    } else {
+        BatchError("Batch Submission Failed (" . whr.Status . "): " . whr.ResponseText)
+    }
+}
+
+FinishBatchSubmission(responseText) {
     jobID := JSON_Get(responseText, "name")
+    if (jobID == "") {
+         BatchError("Failed to parse Job ID from response: " . responseText)
+         return
+    }
 
-    ; Append this specific job to our tracking file
     FileAppend(jobID . "`n", A_ScriptDir "\jobs.txt")
 
-    ; Immediately trigger the monitor if it wasn't running
-    if (true) {
-        global NextCheckTime := A_TickCount
-        SetTimer(UpdateMonitorProgress, 1000)
-    }
-    return jobID
+    batView.Add(, jobID, "Submitted", FormatTime(, "HH:mm:ss"), "0%")
+    batView.ModifyCol()
+    global NextCheckTime := A_TickCount
+    SetTimer(UpdateMonitorProgress, 1000)
+
+    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Batch Submitted: " . jobID
+    SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+    SetLoadingState(false)
+    Prog_Bar.Value := 100
+    ToggleUI(true)
+}
+
+BatchError(msg) {
+    global DEBUG
+    if (DEBUG)
+        LogMessage("BATCH CRITICAL ERROR: " . msg)
+
+    SetLoadingState(false)
+    Prog_Bar.Value := 0
+    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Batch Failed: " . msg
+    SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+    ToggleUI(true)
 }
 
 
-CreateBatchFile(TaskMap) {
+CreateBatchFile(TaskMap, selectedModel) {
     batchPath := A_ScriptDir "\batch_job.jsonl"
     if FileExist(batchPath)
         FileDelete(batchPath)
 
     fileObj := FileOpen(batchPath, "w", "UTF-8-RAW")
-    selectedModel := (Radio_Immediate.Value) ? MODEL1 : MODEL2
     modelPath := "models/" . selectedModel
 
     for imgID, tasks in TaskMap {
@@ -796,47 +835,13 @@ StartBatch(*) {
         SetLoadingState(true)
 
         try {
-            batchPath := CreateBatchFile(ImageTaskMap)
+            selectedBatchModel := InStr(firstAgent, "Flash") ? MODEL1 : MODEL2
+            batchPath := CreateBatchFile(ImageTaskMap, selectedBatchModel)
+            LogMessage("BATCH START: File created at " . batchPath)
 
-            ; --- LOG FILE UPDATE ---
-            ;FileAppend("`n[" . FormatTime(, "HH:mm:ss") . "] BATCH START: File created at " . batchPath . "`n", "debug.log")
-            LogMessage("`n[" . FormatTime(, "HH:mm:ss") . "] BATCH START: File created at " . batchPath . "`n")
-
-            fileUri := UploadBatchFile(batchPath)
-
-
-            ;FileAppend("[" . FormatTime(, "HH:mm:ss") . "] BATCH UPLOAD SUCCESS: URI is " . fileUri . "`n", "debug.log")
-            LogMessage("[" . FormatTime(, "HH:mm:ss") . "] BATCH UPLOAD SUCCESS: URI is " . fileUri . "`n")
-
-            jobName := SubmitBatchJob(fileUri)
-
-            ; Assign JobID to the tasks in the ListView so they show up in the table
-            ;Loop LV_Tasks.GetCount() {
-                ;LV_Tasks.Modify(A_Index, , , , "Submitted", , jobName)
-                ;batView.Add(, "New Upload", firstAgent, "Batch", "Submitted", "0%", jobName)
-            ;}
-
-            batView.Add(, jobName, "Submitted", FormatTime(, "HH:mm:ss"), "0%")
-            batView.ModifyCol()
-            global NextCheckTime := A_TickCount ; batch check
-            SetTimer(UpdateMonitorProgress, 1000)
-
-            ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Batch Submitted: " . jobName
-            SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
-            SetLoadingState(false)
-            Prog_Bar.Value := 100
-            ToggleUI(true)
-
+            AsyncUploadBatchFile(batchPath, selectedBatchModel)
         } catch Error as e {
-            if (DEBUG)
-                ;FileAppend("[" . FormatTime(, "HH:mm:ss") . "] BATCH CRITICAL ERROR: " . e.Message . "`n", "debug.log")
-                LogMessage("[" . FormatTime(, "HH:mm:ss") . "] BATCH CRITICAL ERROR: " . e.Message . "`n")
-
-            SetLoadingState(false)
-            Prog_Bar.Value := 0
-            ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Batch Failed: " . e.Message
-            SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
-            ToggleUI(true)
+            BatchError(e.Message)
         }
     } else {
         global IsBatchRunning := true
@@ -1124,10 +1129,12 @@ CreateJsonPayload(taskObj, taskImagePath) {
     return payload
 }
 
-UploadBatchFile(FilePath) {
-    global useCurl, API_KEY
-    if !FileExist(FilePath)
-        throw Error("Batch file not found: " . FilePath)
+AsyncUploadBatchFile(FilePath, selectedModel) {
+    global useCurl, API_KEY, CurlTimers
+    if !FileExist(FilePath) {
+        BatchError("Batch file not found: " . FilePath)
+        return
+    }
 
     fileData := FileRead(FilePath, "RAW")
     boundary := "-------AHKBoundary" . A_TickCount
@@ -1160,53 +1167,83 @@ UploadBatchFile(FilePath) {
         FileOpen(tempBodyFile, "w", "cp0").RawWrite(combinedBody)
         url := "https://generativelanguage.googleapis.com/upload/v1beta/files?key=" . API_KEY
         curlCmd := 'curl -s -X POST "' . url . '" -H "X-Goog-Upload-Protocol: multipart" -H "Content-Type: multipart/related; boundary=' . boundary . '" --data-binary "@' . tempBodyFile . '" -o "' . resFile . '"'
+
         Run(curlCmd, , "Hide", &pid)
-        while ProcessExist(pid)
-            Sleep(50)
-        resText := FileRead(resFile)
-        try FileDelete(tempBodyFile)
-        try FileDelete(resFile)
-        if RegExMatch(resText, '"uri":\s*"([^"]+)"', &match)
-            return match[1]
-        throw Error("Curl Upload Failed: " . resText)
+        cb := ProcessBatchUploadCurl.Bind(pid, resFile, tempBodyFile, selectedModel)
+        CurlTimers[pid] := cb
+        SetTimer(cb, 100)
+    } else {
+        ; Convert Buffer to a Safe COM Stream
+        pStream := DllCall("shlwapi\SHCreateMemStream", "Ptr", combinedBody.Ptr, "UInt", combinedBody.Size, "Ptr")
+        IStream := ComValue(13, pStream) ; 13 = VT_UNKNOWN (IUnknown/IStream)
+
+        whr := ComObject("WinHttp.WinHttpRequest.5.1")
+        whr.SetTimeouts(30000, 60000, 600000, 600000)
+        url := "https://generativelanguage.googleapis.com/upload/v1beta/files?key=" . API_KEY
+
+        whr.Open("POST", url, true) ; Async
+        whr.SetRequestHeader("X-Goog-Upload-Protocol", "multipart")
+        whr.SetRequestHeader("Content-Type", "multipart/related; boundary=" . boundary)
+        whr.Send(IStream)
+
+        SetTimer(CheckWinHttpUpload.Bind(whr, selectedModel), 100)
+    }
+}
+
+ProcessBatchUploadCurl(pid, resFile, tempBodyFile, selectedModel) {
+    if ProcessExist(pid)
+        return
+
+    global CurlTimers
+    if CurlTimers.Has(pid) {
+        SetTimer(CurlTimers[pid], 0)
+        CurlTimers.Delete(pid)
     }
 
+    resText := ""
+    if FileExist(resFile) {
+        resText := FileRead(resFile)
+        FileDelete(resFile)
+    }
+    if FileExist(tempBodyFile)
+        FileDelete(tempBodyFile)
 
-    ; 3. THE FIX: Convert Buffer to a Safe COM Stream
-    ; This prevents the "No such interface" error by providing a standard IStream interface
-    pStream := DllCall("shlwapi\SHCreateMemStream", "Ptr", combinedBody.Ptr, "UInt", combinedBody.Size, "Ptr")
-    IStream := ComValue(13, pStream) ; 13 = VT_UNKNOWN (IUnknown/IStream)
+    if RegExMatch(resText, '"uri":\s*"([^"]+)"', &match) {
+        LogMessage("BATCH UPLOAD SUCCESS: URI is " . match[1])
+        AsyncSubmitBatchJob(match[1], selectedModel)
+    } else {
+        BatchError("Curl Upload Failed: " . resText)
+    }
+}
 
-    whr := ComObject("WinHttp.WinHttpRequest.5.1")
-    whr.SetTimeouts(30000, 60000, 600000, 600000)
-    url := "https://generativelanguage.googleapis.com/upload/v1beta/files?key=" . API_KEY
+CheckWinHttpUpload(whr, selectedModel) {
+    if (whr.ReadyState != 4)
+        return
 
-    whr.Open("POST", url, false)
-    whr.SetRequestHeader("X-Goog-Upload-Protocol", "multipart")
-    whr.SetRequestHeader("Content-Type", "multipart/related; boundary=" . boundary)
-
-    ; 4. Send the Stream instead of the Buffer
-    whr.Send(IStream)
-
-    if (whr.Status != 200)
-        throw Error("Multipart upload failed: " . whr.ResponseText)
-
-    if RegExMatch(whr.ResponseText, '"uri":\s*"([^"]+)"', &match)
-        return match[1]
-
-    throw Error("Could not find URI in response: " . whr.ResponseText)
+    SetTimer(, 0)
+    if (whr.Status == 200) {
+        if RegExMatch(whr.ResponseText, '"uri":\s*"([^"]+)"', &match) {
+            LogMessage("BATCH UPLOAD SUCCESS: URI is " . match[1])
+            AsyncSubmitBatchJob(match[1], selectedModel)
+        } else {
+            BatchError("Could not find URI in response: " . whr.ResponseText)
+        }
+    } else {
+        BatchError("Multipart upload failed: " . whr.ResponseText)
+    }
 }
 
 
 UpdateMonitorProgress() {
-    global CurrentMonitorIndex, NextCheckTime, CheckInterval
+    global CurrentMonitorIndex, NextCheckTime, CheckInterval, batBar
     remaining := NextCheckTime - A_TickCount
 
     if (remaining <= 0) {
+        try batBar.Value := 100
         jobList := []
         Loop batView.GetCount() {
             status := batView.GetText(A_Index, 2)
-            if (status == "Submitted" || status == "Checking..." || status == "Processing..." || status == "ACTIVE" || status == "RUNNING") {
+            if (RegExMatch(status, "i)^(BATCH_STATE_)?(Submitted|Checking|Processing|ACTIVE|RUNNING|PENDING|UNKNOWN)")) {
                 jobList.Push({row: A_Index, id: batView.GetText(A_Index, 1)})
             }
         }
@@ -1216,6 +1253,7 @@ UpdateMonitorProgress() {
                 CurrentMonitorIndex := 1
                 NextCheckTime := A_TickCount + CheckInterval
                 ModelLogMsg("Batch monitor: Round complete. Next check in " . CheckInterval//1000 . "s")
+                try batBar.Value := 0
                 return
             }
 
@@ -1224,8 +1262,11 @@ UpdateMonitorProgress() {
             CurrentMonitorIndex += 1
         } else {
             SetTimer(UpdateMonitorProgress, 0)
+            try batBar.Value := 0
             ModelLogMsg("Batch monitor: No active jobs. Stopping.")
         }
+    } else {
+        try batBar.Value := Round((1 - (remaining / CheckInterval)) * 100)
     }
 }
 
@@ -1278,8 +1319,16 @@ ProcessBatchStatus(pid, resFile, jobID, targetRow) {
 }
 
 HandleBatchStatus(responseText, jobID, targetRow) {
+    LogMessage("HandleBatchStatus for " . jobID . ": " . SubStr(responseText, 1, 500) . "...")
     state := JSON_Get(responseText, "state")
-    if (state == "") state := "UNKNOWN"
+    if (state == "") {
+        if InStr(responseText, '"error"')
+            state := "ERROR"
+        else
+            state := "UNKNOWN"
+
+        LogMessage("Batch Job " . jobID . " returned no state. Full Response: " . responseText)
+    }
 
     batView.Modify(targetRow, "", , state)
     LogMessage("Job " . jobID . " state: " . state)
@@ -1292,10 +1341,12 @@ HandleBatchStatus(responseText, jobID, targetRow) {
         }
 
         if (outputUri != "") {
-            ModelLogMsg("Job " . jobID . " SUCCEEDED. Starting download...")
+            ModelLogMsg("Job " . jobID . " SUCCEEDED. Starting download from " . outputUri)
+            LogMessage("Job " . jobID . " SUCCEEDED. Starting download from " . outputUri)
             AsyncDownloadBatch(outputUri, targetRow)
         } else {
             ModelLogMsg("[Warning] Job " . jobID . " succeeded but no responsesFile found.")
+            LogMessage("[Warning] Job " . jobID . " succeeded but no responsesFile found in: " . responseText)
         }
     }
 }
@@ -1303,6 +1354,7 @@ HandleBatchStatus(responseText, jobID, targetRow) {
 AsyncDownloadBatch(outputUri, targetRow) {
     global useCurl, API_KEY, CurlTimers
     finalUrl := "https://generativelanguage.googleapis.com/v1beta/" . outputUri . ":download?alt=media&key=" . API_KEY
+    LogMessage("AsyncDownloadBatch URL: " . finalUrl)
 
     if (useCurl) {
         resFile := A_Temp . "\gemini_batch_res_" . A_TickCount . "_" . targetRow . ".jsonl"
@@ -1348,16 +1400,21 @@ ProcessBatchDownload(pid, resFile, targetRow) {
 
 HandleBatchDownload(rawResponse, targetRow) {
     global OutputDir
-    if (rawResponse == "")
-     return
+    if (rawResponse == "") {
+        LogMessage("HandleBatchDownload: rawResponse is EMPTY.")
+        return
+    }
 
+    LogMessage("HandleBatchDownload: Starting processing. Response length: " . StrLen(rawResponse))
     batView.Modify(targetRow, "", , "Success", , "100%")
 
     count := 0
-    Loop Parse, rawResponse, "r" {
+    Loop Parse, rawResponse, "`n", "`r" {
         line := Trim(A_LoopField)
         if (line == "")
-         continue
+            continue
+
+        LogMessage("Processing line " . A_Index . ": " . SubStr(line, 1, 200) . "...")
 
         fn := ""
         if RegExMatch(line, '"custom_id":\s*"([^"]+)"', &m)
@@ -1368,19 +1425,34 @@ HandleBatchDownload(rawResponse, targetRow) {
             b64 := m[1]
         else if RegExMatch(line, '"processed_image_data":\s*"([^"]+)"', &m)
             b64 := m[1]
+        else if RegExMatch(line, 's)"inline_data":\s*\{\s*"mime_type":\s*"[^"]+",\s*"data":\s*"([^"]+)"', &m)
+            b64 := m[1]
 
         if (fn != "" && b64 != "") {
+            LogMessage("Found image for " . fn . ". Base64 length: " . StrLen(b64))
             SplitPath(fn, &justFileName)
-            binData := Base64ToBin(b64)
-            outPath := OutputDir . "\Batch_" . A_TickCount . "_" . justFileName
-            if !RegExMatch(outPath, "i)\.(jpg|png)$")
-                outPath .= ".jpg"
+            try {
+                binData := Base64ToBin(b64)
+                outPath := OutputDir . "\Batch_" . A_TickCount . "_" . justFileName
+                if !RegExMatch(outPath, "i)\.(jpg|png)$")
+                    outPath .= ".jpg"
 
-            SaveBinaryImage(binData, outPath)
-            count++
+                SaveBinaryImage(binData, outPath)
+                LogMessage("Saved image to: " . outPath)
+                count++
+            } catch Error as e {
+                LogMessage("Error saving image for " . fn . ": " . e.Message)
+            }
+        } else {
+            LogMessage("Could not extract fn/b64 from line. fn=" . fn . ", b64_len=" . StrLen(b64))
+            if (InStr(line, '"error"')) {
+                LogMessage("Line contains error: " . line)
+            }
         }
     }
-    ModelLogMsg("Batch download complete. Saved " . count . " images.")
+    msg := "Batch download complete. Saved " . count . " images."
+    ModelLogMsg(msg)
+    LogMessage(msg)
     CleanupJobsFile()
 }
 JSON_Get(jsonStr, key) {
