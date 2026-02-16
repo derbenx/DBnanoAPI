@@ -28,6 +28,7 @@ I can totally be encouraged to fix/upgrade things faster...<br>
 if you install AHK program, you can run my AHK script just like a program.<br>
 If you run it portable (extracted AHK from a zip file), you drag my AHK you downloaded and drop it on AutoHotkey64.exe<br>
 You can also compile AHK scripts into their own *.exe file.<br>
+If you start the program and it says curl not found, download curl.exe and place it in te same folder as the AHK.<br>
 <br>
 <b>Usage:</b><br>
  Drag and drop images to edit OR click Generate to make an image from scratch.<br>
@@ -119,5 +120,6 @@ gemini-2.5-flash-native-audio-preview-12-2025
 <b>Images:</b><br>
 <img src="main.png"><br>
 <img src="batch.png"><br>
+
 
 
