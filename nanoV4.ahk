@@ -3,8 +3,6 @@
 
 ;Todo
 ; error handling and output to modellog
-; config to use curl on with useCurl := 1
-;  curl can drop a stream without downloading the thought.
 ; duplicate task Button
 
 ; --- CONFIG ---
@@ -23,7 +21,7 @@ global CheckInterval := 300000 ; 5 minute timer, don't trigger rate limits.
 ; } These don't change in program.
 
 ; Variables {
-global useCurl := 1
+global useCurl := 1 ; Setting this to 0 uses a HTTPS mode that freezes the GUI! Using curl is recommended.
 global CurrentMonitorIndex := 1
 global imgw := 395
 global imgh := 200
@@ -105,10 +103,10 @@ if (useCurl) {
     ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Found curl.exe using curl mode."
   } else {
     useCurl := 0
-    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Cannot find curl.exe using standard mode."
+    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Cannot find curl.exe using standard mode.  The GUI will freeze when doing HTTPS."
   }
 } else {
- ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Using standard mode."
+ ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Using standard mode. The GUI will freeze when doing HTTPS."
 }
 
 SaveCSV(*) {
@@ -1250,33 +1248,34 @@ UpdateMonitorProgress() {
     remaining := NextCheckTime - A_TickCount
 
     if (remaining <= 0) {
-        try batBar.Value := 100
-        jobList := []
+        ; 1. Find all currently active jobs
+        activeJobs := []
         Loop batView.GetCount() {
             status := batView.GetText(A_Index, 2)
-            ;ModelLogMsg("Batch monitor: " . A_Index . "=" . status)
             if (RegExMatch(status, "i)^(BATCH_STATE_)?(Submitted|Checking|Processing|ACTIVE|RUNNING|PENDING|UNKNOWN)")) {
-                jobList.Push({row: A_Index, id: batView.GetText(A_Index, 1)})
+                activeJobs.Push({id: batView.GetText(A_Index, 1), row: A_Index})
             }
         }
 
-        if (jobList.Length > 0) {
-            if (CurrentMonitorIndex > jobList.Length) {
-                CurrentMonitorIndex := 1
-                NextCheckTime := A_TickCount + CheckInterval
-                ModelLogMsg("Batch monitor: Round complete. Next check in " . CheckInterval//1000 . "s")
-                try batBar.Value := 0
-                return
-            }
-
-            target := jobList[CurrentMonitorIndex]
-            AsyncCheckBatchStatus(target.id, target.row)
-            CurrentMonitorIndex += 1
-        } else {
+        if (activeJobs.Length == 0) {
             SetTimer(UpdateMonitorProgress, 0)
             try batBar.Value := 0
             ModelLogMsg("Batch monitor: No active jobs. Stopping.")
+            return
         }
+
+        ; 2. Cycle through them
+        if (CurrentMonitorIndex > activeJobs.Length)
+            CurrentMonitorIndex := 1
+
+        target := activeJobs[CurrentMonitorIndex]
+        AsyncCheckBatchStatus(target.id, target.row)
+
+        ; 3. Prepare for next check
+        CurrentMonitorIndex += 1
+        NextCheckTime := A_TickCount + CheckInterval
+        ModelLogMsg("Batch monitor: Checked " . target.id . ". Next check in " . CheckInterval//1000 . "s")
+        try batBar.Value := 0
     } else {
         try batBar.Value := Round((1 - (remaining / CheckInterval)) * 100)
     }
