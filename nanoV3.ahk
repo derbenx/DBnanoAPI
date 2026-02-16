@@ -1235,14 +1235,15 @@ CheckWinHttpUpload(whr, selectedModel) {
 
 
 UpdateMonitorProgress() {
-    global CurrentMonitorIndex, NextCheckTime, CheckInterval
+    global CurrentMonitorIndex, NextCheckTime, CheckInterval, batBar
     remaining := NextCheckTime - A_TickCount
 
     if (remaining <= 0) {
+        try batBar.Value := 100
         jobList := []
         Loop batView.GetCount() {
             status := batView.GetText(A_Index, 2)
-            if (status == "Submitted" || status == "Checking..." || status == "Processing..." || status == "ACTIVE" || status == "RUNNING") {
+            if (RegExMatch(status, "i)^(Submitted|Checking|Processing|ACTIVE|RUNNING|PENDING|UNKNOWN)")) {
                 jobList.Push({row: A_Index, id: batView.GetText(A_Index, 1)})
             }
         }
@@ -1252,6 +1253,7 @@ UpdateMonitorProgress() {
                 CurrentMonitorIndex := 1
                 NextCheckTime := A_TickCount + CheckInterval
                 ModelLogMsg("Batch monitor: Round complete. Next check in " . CheckInterval//1000 . "s")
+                try batBar.Value := 0
                 return
             }
 
@@ -1260,8 +1262,11 @@ UpdateMonitorProgress() {
             CurrentMonitorIndex += 1
         } else {
             SetTimer(UpdateMonitorProgress, 0)
+            try batBar.Value := 0
             ModelLogMsg("Batch monitor: No active jobs. Stopping.")
         }
+    } else {
+        try batBar.Value := Round((1 - (remaining / CheckInterval)) * 100)
     }
 }
 
@@ -1315,7 +1320,14 @@ ProcessBatchStatus(pid, resFile, jobID, targetRow) {
 
 HandleBatchStatus(responseText, jobID, targetRow) {
     state := JSON_Get(responseText, "state")
-    if (state == "") state := "UNKNOWN"
+    if (state == "") {
+        if InStr(responseText, '"error"')
+            state := "ERROR"
+        else
+            state := "UNKNOWN"
+
+        LogMessage("Batch Job " . jobID . " returned no state. Response: " . responseText)
+    }
 
     batView.Modify(targetRow, "", , state)
     LogMessage("Job " . jobID . " state: " . state)
