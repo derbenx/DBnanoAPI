@@ -97,6 +97,7 @@ Tab.UseTab()
 global ModelLog := MyGui.Add("Edit", "xm y500 w" . imgw*2+40 . " r5 +ReadOnly +vModelLog", "")
 MyGui.Show()
 ModelLogMsg("Networking initialized. useCurl=" . useCurl . " (1=curl, 0=WinHttp)")
+LogMessage("SCRIPT START. useCurl=" . useCurl . ", DEBUG=" . DEBUG)
 SetTimer(LoadExistingJobs, -500)
 
 ModelLogMsg("Networking initialized. useCurl=" . useCurl . " (1=curl, 0=WinHttp)")
@@ -1401,10 +1402,12 @@ ProcessBatchDownload(pid, resFile, targetRow) {
 HandleBatchDownload(rawResponse, targetRow) {
     global OutputDir
     if (rawResponse == "") {
+        ModelLogMsg("Error: Download response is empty.")
         LogMessage("HandleBatchDownload: rawResponse is EMPTY.")
         return
     }
 
+    ModelLogMsg("Processing download (" . StrLen(rawResponse) . " bytes)...")
     LogMessage("HandleBatchDownload: Starting processing. Response length: " . StrLen(rawResponse))
     batView.Modify(targetRow, "", , "Success", , "100%")
 
@@ -1414,18 +1417,17 @@ HandleBatchDownload(rawResponse, targetRow) {
         if (line == "")
             continue
 
-        LogMessage("Processing line " . A_Index . ": " . SubStr(line, 1, 200) . "...")
+        LogMessage("Line " . A_Index . ": " . SubStr(line, 1, 200) . "...")
 
         fn := ""
         if RegExMatch(line, '"custom_id":\s*"([^"]+)"', &m)
             fn := m[1]
 
         b64 := ""
-        if RegExMatch(line, '"data":\s*"([^"]+)"', &m)
+        ; Broad search for a long base64 string in any "data" field
+        if RegExMatch(line, '"data":\s*"([^"]{100,})"', &m)
             b64 := m[1]
-        else if RegExMatch(line, '"processed_image_data":\s*"([^"]+)"', &m)
-            b64 := m[1]
-        else if RegExMatch(line, 's)"inline_data":\s*\{\s*"mime_type":\s*"[^"]+",\s*"data":\s*"([^"]+)"', &m)
+        else if RegExMatch(line, '"processed_image_data":\s*"([^"]{100,})"', &m)
             b64 := m[1]
 
         if (fn != "" && b64 != "") {
@@ -1438,21 +1440,25 @@ HandleBatchDownload(rawResponse, targetRow) {
                     outPath .= ".jpg"
 
                 SaveBinaryImage(binData, outPath)
-                LogMessage("Saved image to: " . outPath)
+                LogMessage("Saved: " . outPath)
                 count++
             } catch Error as e {
+                ModelLogMsg("Error saving " . fn . ": " . e.Message)
                 LogMessage("Error saving image for " . fn . ": " . e.Message)
             }
         } else {
-            LogMessage("Could not extract fn/b64 from line. fn=" . fn . ", b64_len=" . StrLen(b64))
-            if (InStr(line, '"error"')) {
-                LogMessage("Line contains error: " . line)
-            }
+            LogMessage("No match on line " . A_Index . ". fn=" . fn . ", b64_len=" . StrLen(b64))
+            if (InStr(line, '"error"'))
+                LogMessage("Line " . A_Index . " error: " . line)
         }
     }
-    msg := "Batch download complete. Saved " . count . " images."
-    ModelLogMsg(msg)
-    LogMessage(msg)
+
+    if (count == 0) {
+        ModelLogMsg("Warning: No images found in response.")
+        LogMessage("HandleBatchDownload: NO IMAGES FOUND. First 1000 chars: " . SubStr(rawResponse, 1, 1000))
+    } else {
+        ModelLogMsg("Batch complete. Saved " . count . " images.")
+    }
     CleanupJobsFile()
 }
 JSON_Get(jsonStr, key) {
