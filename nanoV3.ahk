@@ -1250,33 +1250,34 @@ UpdateMonitorProgress() {
     remaining := NextCheckTime - A_TickCount
 
     if (remaining <= 0) {
-        try batBar.Value := 100
-        jobList := []
+        ; 1. Find all currently active jobs
+        activeJobs := []
         Loop batView.GetCount() {
             status := batView.GetText(A_Index, 2)
-            ;ModelLogMsg("Batch monitor: " . A_Index . "=" . status)
             if (RegExMatch(status, "i)^(BATCH_STATE_)?(Submitted|Checking|Processing|ACTIVE|RUNNING|PENDING|UNKNOWN)")) {
-                jobList.Push({row: A_Index, id: batView.GetText(A_Index, 1)})
+                activeJobs.Push({id: batView.GetText(A_Index, 1), row: A_Index})
             }
         }
 
-        if (jobList.Length > 0) {
-            if (CurrentMonitorIndex > jobList.Length) {
-                CurrentMonitorIndex := 1
-                NextCheckTime := A_TickCount + CheckInterval
-                ModelLogMsg("Batch monitor: Round complete. Next check in " . CheckInterval//1000 . "s")
-                try batBar.Value := 0
-                return
-            }
-
-            target := jobList[CurrentMonitorIndex]
-            AsyncCheckBatchStatus(target.id, target.row)
-            CurrentMonitorIndex += 1
-        } else {
+        if (activeJobs.Length == 0) {
             SetTimer(UpdateMonitorProgress, 0)
             try batBar.Value := 0
             ModelLogMsg("Batch monitor: No active jobs. Stopping.")
+            return
         }
+
+        ; 2. Cycle through them
+        if (CurrentMonitorIndex > activeJobs.Length)
+            CurrentMonitorIndex := 1
+
+        target := activeJobs[CurrentMonitorIndex]
+        AsyncCheckBatchStatus(target.id, target.row)
+
+        ; 3. Prepare for next check
+        CurrentMonitorIndex += 1
+        NextCheckTime := A_TickCount + CheckInterval
+        ModelLogMsg("Batch monitor: Checked " . target.id . ". Next check in " . CheckInterval//1000 . "s")
+        try batBar.Value := 0
     } else {
         try batBar.Value := Round((1 - (remaining / CheckInterval)) * 100)
     }
