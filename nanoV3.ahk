@@ -1319,6 +1319,7 @@ ProcessBatchStatus(pid, resFile, jobID, targetRow) {
 }
 
 HandleBatchStatus(responseText, jobID, targetRow) {
+    LogMessage("HandleBatchStatus for " . jobID . ": " . SubStr(responseText, 1, 500) . "...")
     state := JSON_Get(responseText, "state")
     if (state == "") {
         if InStr(responseText, '"error"')
@@ -1326,7 +1327,7 @@ HandleBatchStatus(responseText, jobID, targetRow) {
         else
             state := "UNKNOWN"
 
-        LogMessage("Batch Job " . jobID . " returned no state. Response: " . responseText)
+        LogMessage("Batch Job " . jobID . " returned no state. Full Response: " . responseText)
     }
 
     batView.Modify(targetRow, "", , state)
@@ -1340,10 +1341,12 @@ HandleBatchStatus(responseText, jobID, targetRow) {
         }
 
         if (outputUri != "") {
-            ModelLogMsg("Job " . jobID . " SUCCEEDED. Starting download...")
+            ModelLogMsg("Job " . jobID . " SUCCEEDED. Starting download from " . outputUri)
+            LogMessage("Job " . jobID . " SUCCEEDED. Starting download from " . outputUri)
             AsyncDownloadBatch(outputUri, targetRow)
         } else {
             ModelLogMsg("[Warning] Job " . jobID . " succeeded but no responsesFile found.")
+            LogMessage("[Warning] Job " . jobID . " succeeded but no responsesFile found in: " . responseText)
         }
     }
 }
@@ -1351,6 +1354,7 @@ HandleBatchStatus(responseText, jobID, targetRow) {
 AsyncDownloadBatch(outputUri, targetRow) {
     global useCurl, API_KEY, CurlTimers
     finalUrl := "https://generativelanguage.googleapis.com/v1beta/" . outputUri . ":download?alt=media&key=" . API_KEY
+    LogMessage("AsyncDownloadBatch URL: " . finalUrl)
 
     if (useCurl) {
         resFile := A_Temp . "\gemini_batch_res_" . A_TickCount . "_" . targetRow . ".jsonl"
@@ -1396,16 +1400,21 @@ ProcessBatchDownload(pid, resFile, targetRow) {
 
 HandleBatchDownload(rawResponse, targetRow) {
     global OutputDir
-    if (rawResponse == "")
-     return
+    if (rawResponse == "") {
+        LogMessage("HandleBatchDownload: rawResponse is EMPTY.")
+        return
+    }
 
+    LogMessage("HandleBatchDownload: Starting processing. Response length: " . StrLen(rawResponse))
     batView.Modify(targetRow, "", , "Success", , "100%")
 
     count := 0
-    Loop Parse, rawResponse, "r" {
+    Loop Parse, rawResponse, "`n", "`r" {
         line := Trim(A_LoopField)
         if (line == "")
-         continue
+            continue
+
+        LogMessage("Processing line " . A_Index . ": " . SubStr(line, 1, 200) . "...")
 
         fn := ""
         if RegExMatch(line, '"custom_id":\s*"([^"]+)"', &m)
@@ -1416,19 +1425,34 @@ HandleBatchDownload(rawResponse, targetRow) {
             b64 := m[1]
         else if RegExMatch(line, '"processed_image_data":\s*"([^"]+)"', &m)
             b64 := m[1]
+        else if RegExMatch(line, 's)"inline_data":\s*\{\s*"mime_type":\s*"[^"]+",\s*"data":\s*"([^"]+)"', &m)
+            b64 := m[1]
 
         if (fn != "" && b64 != "") {
+            LogMessage("Found image for " . fn . ". Base64 length: " . StrLen(b64))
             SplitPath(fn, &justFileName)
-            binData := Base64ToBin(b64)
-            outPath := OutputDir . "\Batch_" . A_TickCount . "_" . justFileName
-            if !RegExMatch(outPath, "i)\.(jpg|png)$")
-                outPath .= ".jpg"
+            try {
+                binData := Base64ToBin(b64)
+                outPath := OutputDir . "\Batch_" . A_TickCount . "_" . justFileName
+                if !RegExMatch(outPath, "i)\.(jpg|png)$")
+                    outPath .= ".jpg"
 
-            SaveBinaryImage(binData, outPath)
-            count++
+                SaveBinaryImage(binData, outPath)
+                LogMessage("Saved image to: " . outPath)
+                count++
+            } catch Error as e {
+                LogMessage("Error saving image for " . fn . ": " . e.Message)
+            }
+        } else {
+            LogMessage("Could not extract fn/b64 from line. fn=" . fn . ", b64_len=" . StrLen(b64))
+            if (InStr(line, '"error"')) {
+                LogMessage("Line contains error: " . line)
+            }
         }
     }
-    ModelLogMsg("Batch download complete. Saved " . count . " images.")
+    msg := "Batch download complete. Saved " . count . " images."
+    ModelLogMsg(msg)
+    LogMessage(msg)
     CleanupJobsFile()
 }
 JSON_Get(jsonStr, key) {
