@@ -16,7 +16,7 @@ global encourage := "You are a professional image-restoration engine. Your goal 
 ;global encourageImg := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
 global proVal := "everyone stands on top of a large pile of burgers. the burgers deform under load."
 global negVal := "distorted faces, blurry, distorted, low quality, text, watermarks, missing or extra limbs, deformities, floating people or objects"  ; do not make
-global DEBUG := 0 ; typically one would leave this off.
+global DEBUG := 1
 global CheckInterval := 300000 ; 5 minute timer, don't trigger rate limits.
 ; } These don't change in program.
 
@@ -570,8 +570,8 @@ AsyncSubmitBatchJob(fileUri, selectedModel) {
     payload := '{ "batch": { "input_config": { "file_name": "' . fileId . '" } } }'
 
     if (useCurl) {
-        resFile := A_Temp . "\gemini_batch_sub_" . A_TickCount . ".json"
-        payloadFile := A_Temp . "\gemini_batch_sub_pay_" . A_TickCount . ".json"
+        resFile := A_ScriptDir . "\gemini_batch_sub_" . A_TickCount . ".json"
+        payloadFile := A_ScriptDir . "\gemini_batch_sub_pay_" . A_TickCount . ".json"
         FileAppend(payload, payloadFile, "UTF-8-RAW")
 
         curlCmd := 'curl -s -X POST "' . apiUrl . '" -H "Content-Type: application/json" -d "@' . payloadFile . '" -o "' . resFile . '"'
@@ -941,8 +941,8 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
     MODEL_ID := InStr(agent, "Flash") ? MODEL1 : MODEL2
     if (useCurl) {
         payload := CreateJsonPayload(taskObj, fullPath)
-        payloadFile := A_Temp . "\gemini_pay_" . A_TickCount . "_" . batchIdx . ".json"
-        responseFile := A_Temp . "\gemini_res_" . A_TickCount . "_" . batchIdx . ".json"
+        payloadFile := A_ScriptDir . "\gemini_pay_" . A_TickCount . "_" . batchIdx . ".json"
+        responseFile := A_ScriptDir . "\gemini_res_" . A_TickCount . "_" . batchIdx . ".json"
         if FileExist(payloadFile)
             FileDelete(payloadFile)
         FileAppend(payload, payloadFile, "UTF-8-RAW")
@@ -1164,8 +1164,8 @@ AsyncUploadBatchFile(FilePath, selectedModel) {
     StrPut(bodyEnd, combinedBody.Ptr + offset, "UTF-8")
 
     if (useCurl) {
-        tempBodyFile := A_Temp . "\gemini_upload_" . A_TickCount . ".bin"
-        resFile := A_Temp . "\gemini_upload_res_" . A_TickCount . ".json"
+        tempBodyFile := A_ScriptDir . "\gemini_upload_" . A_TickCount . ".bin"
+        resFile := A_ScriptDir . "\gemini_upload_res_" . A_TickCount . ".json"
         FileOpen(tempBodyFile, "w", "cp0").RawWrite(combinedBody)
         url := "https://generativelanguage.googleapis.com/upload/v1beta/files?key=" . API_KEY
         curlCmd := 'curl -s -X POST "' . url . '" -H "X-Goog-Upload-Protocol: multipart" -H "Content-Type: multipart/related; boundary=' . boundary . '" --data-binary "@' . tempBodyFile . '" -o "' . resFile . '"'
@@ -1286,7 +1286,7 @@ AsyncCheckBatchStatus(jobID, targetRow) {
     url := "https://generativelanguage.googleapis.com/v1beta/" . jobID . "?key=" . API_KEY
 
     if (useCurl) {
-        resFile := A_Temp . "\gemini_status_" . A_TickCount . "_" . targetRow . ".json"
+        resFile := A_ScriptDir . "\gemini_status_" . A_TickCount . "_" . targetRow . ".json"
         curlCmd := 'curl -s -L "' . url . '" -o "' . resFile . '"'
         LogMessage("Async status check: " . curlCmd)
         Run(curlCmd, , "Hide", &pid)
@@ -1369,7 +1369,7 @@ AsyncDownloadBatch(outputUri, targetRow) {
     LogMessage("AsyncDownloadBatch URL: " . finalUrl)
 
     if (useCurl) {
-        resFile := A_Temp . "\gemini_batch_res_" . A_TickCount . "_" . targetRow . ".jsonl"
+        resFile := A_ScriptDir . "\gemini_batch_res_" . A_TickCount . "_" . targetRow . ".jsonl"
         curlCmd := 'curl -s -L "' . finalUrl . '" -o "' . resFile . '"'
         LogMessage("Async download: " . curlCmd)
         Run(curlCmd, , "Hide", &pid)
@@ -1509,7 +1509,7 @@ TestAPIConnection(*) {
         responseText := ""
         status := 0
         if (useCurl) {
-            resFile := A_Temp . "\gemini_models_" . A_TickCount . ".json"
+            resFile := A_ScriptDir . "\gemini_models_" . A_TickCount . ".json"
             curlCmd := 'curl -s "' . url . '" -o "' . resFile . '"'
             Run(curlCmd, , "Hide", &pid)
         while ProcessExist(pid)
@@ -1885,5 +1885,3 @@ CleanupJobsFile() {
         ModelLogMsg("[Error] Failed to update jobs.txt: " . e.Message)
     }
 }
-
-
