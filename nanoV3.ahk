@@ -37,6 +37,7 @@ global LastFPress := 0
 global NextImageID := 1
 global PendingTasks := 0
 global CurlTimers := Map()
+global ActiveStreams := Map()
 ; }
 
 if !DirExist(OutputDir)
@@ -1185,8 +1186,11 @@ AsyncUploadBatchFile(FilePath, selectedModel) {
         whr.Open("POST", url, true) ; Async
         whr.SetRequestHeader("X-Goog-Upload-Protocol", "multipart")
         whr.SetRequestHeader("Content-Type", "multipart/related; boundary=" . boundary)
-        whr.Send(IStream)
 
+        global ActiveStreams
+        ActiveStreams[whr] := IStream ; Keep stream alive
+
+        whr.Send(IStream)
         SetTimer(CheckWinHttpUpload.Bind(whr, selectedModel), 100)
     }
 }
@@ -1222,6 +1226,10 @@ CheckWinHttpUpload(whr, selectedModel) {
         return
 
     SetTimer(, 0)
+    global ActiveStreams
+    if ActiveStreams.Has(whr)
+        ActiveStreams.Delete(whr)
+
     if (whr.Status == 200) {
         if RegExMatch(whr.ResponseText, '"uri":\s*"([^"]+)"', &match) {
             LogMessage("BATCH UPLOAD SUCCESS: URI is " . match[1])
@@ -1400,7 +1408,8 @@ ProcessBatchDownload(pid, resFile, targetRow) {
 }
 
 HandleBatchDownload(rawResponse, targetRow) {
-    global OutputDir
+    global OutputDir, batView
+    jobID := batView.GetText(targetRow, 1)
     if (rawResponse == "") {
         ModelLogMsg("Error: Download response is empty.")
         LogMessage("HandleBatchDownload: rawResponse is EMPTY.")
@@ -1408,7 +1417,7 @@ HandleBatchDownload(rawResponse, targetRow) {
     }
 
     ModelLogMsg("Processing download (" . StrLen(rawResponse) . " bytes)...")
-    LogMessage("HandleBatchDownload: Starting processing. Response length: " . StrLen(rawResponse))
+    LogMessage("HandleBatchDownload for " . jobID . ": Starting processing. Response length: " . StrLen(rawResponse))
     batView.Modify(targetRow, "", , "Success", , "100%")
 
     count := 0
@@ -1423,39 +1432,45 @@ HandleBatchDownload(rawResponse, targetRow) {
         if RegExMatch(line, '"custom_id":\s*"([^"]+)"', &m)
             fn := m[1]
 
-        b64 := ""
-        ; Broad search for a long base64 string in any "data" field
-        if RegExMatch(line, '"data":\s*"([^"]{100,})"', &m)
-            b64 := m[1]
-        else if RegExMatch(line, '"processed_image_data":\s*"([^"]{100,})"', &m)
-            b64 := m[1]
+        LogMessage("Line " . A_Index . " ID: " . fn)
 
-        if (fn != "" && b64 != "") {
-            LogMessage("Found image for " . fn . ". Base64 length: " . StrLen(b64))
+        ; Use a while loop to find ALL base64 data blocks in the line that look like images
+        pos := 1
+        foundInLine := 0
+        while (pos := RegExMatch(line, 'i)"(data|processed_image_data)":\s*"([^"]{1000,})"', &m, pos)) {
+            b64 := m[2]
+            LogMessage("Found potential image data (" . m[1] . ") for " . fn . " at pos " . pos . ". Length: " . StrLen(b64))
+
             SplitPath(fn, &justFileName)
             try {
                 binData := Base64ToBin(b64)
-                outPath := OutputDir . "\Batch_" . A_TickCount . "_" . justFileName
+                outPath := OutputDir . "\Batch_" . A_TickCount . "_" . count . "_" . justFileName
                 if !RegExMatch(outPath, "i)\.(jpg|png)$")
                     outPath .= ".jpg"
 
                 SaveBinaryImage(binData, outPath)
                 LogMessage("Saved: " . outPath)
                 count++
+                foundInLine++
             } catch Error as e {
-                ModelLogMsg("Error saving " . fn . ": " . e.Message)
-                LogMessage("Error saving image for " . fn . ": " . e.Message)
+                LogMessage("Error saving image: " . e.Message)
             }
-        } else {
-            LogMessage("No match on line " . A_Index . ". fn=" . fn . ", b64_len=" . StrLen(b64))
-            if (InStr(line, '"error"'))
-                LogMessage("Line " . A_Index . " error: " . line)
+            pos += m.Len
+        }
+
+        if (foundInLine == 0) {
+             LogMessage("No images found for ID: " . fn)
+             if (InStr(line, '"error"'))
+                 LogMessage("Line " . A_Index . " error: " . line)
         }
     }
 
     if (count == 0) {
-        ModelLogMsg("Warning: No images found in response.")
-        LogMessage("HandleBatchDownload: NO IMAGES FOUND. First 1000 chars: " . SubStr(rawResponse, 1, 1000))
+        ModelLogMsg("Warning: No images found in response for " . jobID . ". Dumping to failed_batch_response.json")
+        LogMessage("HandleBatchDownload for " . jobID . ": NO IMAGES FOUND. Dumping first 5000 chars to failed_batch_response.json")
+        try {
+            FileOpen(A_ScriptDir . "\failed_batch_response.json", "w", "UTF-8").Write(SubStr(rawResponse, 1, 5000))
+        }
     } else {
         ModelLogMsg("Batch complete. Saved " . count . " images.")
     }
