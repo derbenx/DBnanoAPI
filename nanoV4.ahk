@@ -16,7 +16,7 @@ global encourage := "You are a professional image-restoration engine. Your goal 
 ;global encourageImg := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
 global proVal := "everyone stands on a large pile of burgers. the burgers deform under load."
 global negVal := "distorted faces, blurry, distorted, low quality, text, watermarks, missing or extra limbs, deformities, floating people or objects"  ; do not make
-global DEBUG := 1
+global DEBUG := 0 ; typically one would leave this off.
 global CheckInterval := 300000 ; 5 minute timer, don't trigger rate limits.
 ; } These don't change in program.
 
@@ -1885,3 +1885,4 @@ CleanupJobsFile() {
         ModelLogMsg("[Error] Failed to update jobs.txt: " . e.Message)
     }
 }
+
