@@ -1243,7 +1243,7 @@ UpdateMonitorProgress() {
         jobList := []
         Loop batView.GetCount() {
             status := batView.GetText(A_Index, 2)
-            if (RegExMatch(status, "i)^(Submitted|Checking|Processing|ACTIVE|RUNNING|PENDING|UNKNOWN)")) {
+            if (RegExMatch(status, "i)^(BATCH_STATE_)?(Submitted|Checking|Processing|ACTIVE|RUNNING|PENDING|UNKNOWN)")) {
                 jobList.Push({row: A_Index, id: batView.GetText(A_Index, 1)})
             }
         }
