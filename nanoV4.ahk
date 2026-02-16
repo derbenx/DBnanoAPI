@@ -321,7 +321,11 @@ CalculateCost(agent, res) {
 ShowTaskForm(*) {
     global proVal, negVal
 
-    ; // 1. Identify which images are selected
+    ; // 1. Determine if we are editing
+    isEdit := (Btn_Add.Text == "Edit Task")
+    selectedTaskRow := LV_Tasks.GetNext(0, "Focused")
+
+    ; // 2. Identify which images are selected
     selectedRows := []
     row := 0
     while (row := LV_Images.GetNext(row)) {
@@ -329,13 +333,16 @@ ShowTaskForm(*) {
     }
 
     if (selectedRows.Length == 0) {
-        MsgBox "Please select at least one image on the left first!"
-        return
+        if (isEdit && selectedTaskRow > 0) {
+            ; Editing - we'll get the ID from the task list
+        } else if (LV_Images.GetCount() == 1) {
+            LV_Images.Modify(1, "Select Focus")
+            selectedRows.Push(1)
+        } else {
+            MsgBox "Please select at least one image on the left first!"
+            return
+        }
     }
-
-    ; // 2. Determine if we are editing
-    isEdit := (Btn_Add.Text == "Edit Task")
-    selectedTaskRow := LV_Tasks.GetNext(0, "Focused")
 
     imgIDDisplay := ""
     currentImgPath := ""
