@@ -1,4 +1,4 @@
-You probably want the latest version of this script. It's probably the least buggy.<br>
+You probably want the latest, non WIP version of this script. It's probably the least buggy.<br>
 You also need AHK AutoHotKey v2. https://www.autohotkey.com/download/<br>
 Internet is also required, images get uploaded to google servers. You can start a batch and go offline, the app will check once it's online again.<br>
 <br>
@@ -119,4 +119,5 @@ gemini-2.5-flash-native-audio-preview-12-2025
 <b>Images:</b><br>
 <img src="main.png"><br>
 <img src="batch.png"><br>
+
 
