@@ -809,15 +809,16 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
-    global MODEL1, MODEL2, MODEL3
+    global MODEL1, MODEL2, MODEL3, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
+    firstAgent := ""
+    isMixed := false
+    selectedBatchModel := ""
+
     if (LV_Tasks.GetCount() == 0) {
         MsgBox "No tasks to run!"
         return
     }
     if (Radio_Batch.Value) {
-        firstAgent := "" ; Changed from firstModel
-        isMixed := false
-
         for filePath, taskList in ImageTaskMap {
             for taskObj in taskList {
                 if (firstAgent == "") {
@@ -930,7 +931,11 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, MODEL3, hurl, useCurl, PendingTasks, CurlTimers
+    global API_KEY, MODEL1, MODEL2, MODEL3, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+
+    MODEL_ID := ""
+    payload := ""
+    apiUrl := ""
 
     ; // Extract variables from the task object
     agent := taskObj.Agent
@@ -961,10 +966,15 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         payload := CreateJsonPayload(taskObj, fullPath)
         payloadFile := A_ScriptDir . "\gemini_pay_" . A_TickCount . "_" . batchIdx . ".json"
         responseFile := A_ScriptDir . "\gemini_res_" . A_TickCount . "_" . batchIdx . ".json"
-        if FileExist(payloadFile)
-            FileDelete(payloadFile)
+
+        ; FileDelete(payloadFile) ; User commented out FileDeletes
         FileAppend(payload, payloadFile, "UTF-8-RAW")
+
         apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
+
+        LogMessage("Task " . batchIdx . " API URL: " . apiUrl)
+        LogMessage("Task " . batchIdx . " Payload length: " . StrLen(payload))
+
         curlCmd := 'curl -s -N -X POST "' . apiUrl . '" -H "Content-Type: application/json" -d "@' . payloadFile . '" -o "' . responseFile . '"'
         Run(curlCmd, , "Hide", &pid)
         global PendingTasks += 1
@@ -1078,15 +1088,25 @@ FileToBase64(FilePath) {
 }
 
 CreateJsonPayload(taskObj, taskImagePath) {
-    global encourageGen, encourageEdt
+    global encourageGen, encourageEdt, DEBUG
+
+    enc := ""
+    fullPrompt := ""
+    cleanPrompt := ""
+    cleanEncourage := ""
+    icfg := ""
+    payload := ""
 
     ; Select encouragement based on whether we are generating from scratch or editing
     enc := (taskImagePath == "<GENERATE>") ? encourageGen : encourageEdt
 
+    if (DEBUG)
+        LogMessage("Payload creation for " . taskImagePath . " using " . ((taskImagePath == "<GENERATE>") ? "encourageGen" : "encourageEdt"))
+
     ; Merge instructions into the text prompt since Gemini doesn't support them in config
-    fullPrompt := "USER DIRECTIVE: " . TaskObj.Prompt
-                . ". Aspect Ratio: " . TaskObj.Ratio
-                . ". Avoid: " . TaskObj.NegativePrompt
+    fullPrompt := "USER DIRECTIVE: " . taskObj.Prompt
+                . ". Aspect Ratio: " . taskObj.Ratio
+                . ". Avoid: " . taskObj.NegativePrompt
 
     ; Sanitize prompt for JSON
     cleanPrompt := StrReplace(fullPrompt, '"', '\"')
@@ -1097,9 +1117,9 @@ CreateJsonPayload(taskObj, taskImagePath) {
     cleanEncourage := StrReplace(cleanEncourage, "`r", "")
     cleanEncourage := StrReplace(cleanEncourage, "`n", " ")
 
-    icfg := '"aspectRatio": "' . TaskObj.Ratio . '"'
-    if (TaskObj.Size != "1K")
-        icfg .= ', "image_size": "' . TaskObj.Size . '"'
+    icfg := '"aspectRatio": "' . taskObj.Ratio . '"'
+    if (taskObj.Size != "1K")
+        icfg .= ', "image_size": "' . taskObj.Size . '"'
 
     if (taskImagePath == "<GENERATE>") {
         payload := '{'
@@ -1125,7 +1145,7 @@ CreateJsonPayload(taskObj, taskImagePath) {
     for path in paths {
         if (path == "")
             continue
-        mime := (TaskObj.Format = "PNG") ? "image/png" : "image/jpeg"
+        mime := (taskObj.Format = "PNG") ? "image/png" : "image/jpeg"
         b64 := FileToBase64(path)
         imageParts .= ', {"inline_data": {"mime_type": "' . mime . '", "data": "' . b64 . '"}}'
     }
