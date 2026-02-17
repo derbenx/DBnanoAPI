@@ -11,7 +11,7 @@ global OutputDir := A_ScriptDir "\img"
 global MODEL1 := "gemini-2.5-flash-image" ; 1k
 global MODEL2 := "gemini-3-pro-image-preview" ; 1k 2k 4k
 global MODEL3 := "imagen-4.0-generate-001" ; 2k
-global MODEL4 := "imagen-4.0-ultra-generate-001" ; 4k
+global MODEL4 := "imagen-4.0-ultra-generate-001" ; 2k
 global encourageEdt := "You are a professional image-restoration engine. Your goal is to apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear, and perfectly aligned with the reference. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage."
 global encourageGen := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
 global proVal := "everyone stands on top of a large pile of burgers. the burgers deform under load."
@@ -93,7 +93,7 @@ Btn_ClearBatches.OnEvent("Click", ClearFinishedJobs)
 batBar := MyGui.Add("Progress", "x20 y480 w" . imgw*2+20 . " h15 cGreen", 0)
 
 Tab.UseTab(3)
-HelpDisp := MyGui.Add("Text", "w" . imgw*2+40 . " h600", "Nano Banana Flash and Nano Banana Pro can do multiple images and batch.`nImagen does single images only.`n`nCosts are based on 2026 data, subject to change")
+HelpDisp := MyGui.Add("Text", "w" . imgw*2+40 . " h600", "Nano Banana Flash and Nano Banana Pro can edit or generate multiple images and do batch.`nImagen is text to image only.`n`nCosts are based on 2026 data, subject to change")
 
 Tab.UseTab()
 global ModelLog := MyGui.Add("Edit", "xm y500 w" . imgw*2+40 . " r5 +ReadOnly +vModelLog", "")
@@ -306,21 +306,22 @@ LoadExistingJobs() {
     SetTimer(UpdateMonitorProgress, 1000)
 }
 
-CalculateCost(agent, res) {
+CalculateCost(agent, res := "1K") {
+ full := agent . " " . res
  base := 0.134 ; pro 1K & pro 2k
  nano := 1
- if (InStr(agent, "Imagen 2K")) {
+ if (InStr(full, "Imagen 2K")) {
   base:= 0.04
   nano:=0
  }
- if (InStr(agent, "Imagen 4K")) {
+ if (InStr(full, "Ultra 2K")) {
   base:= 0.06
   nano:=0
  }
- if (InStr(agent, "Pro 4K")) {
+ if (InStr(full, "Pro 4K")) {
   base:= 0.24
  }
- if (InStr(agent, "Flash")) {
+ if (InStr(full, "Flash")) {
   base:= 0.039
  }
  ; Apply 50% discount if Batch Mode is selected
@@ -408,7 +409,7 @@ ShowTaskForm(*) {
             nVal := task.NegativePrompt
 
             tierStr := task.Agent . " " . task.Size
-            for i, val in ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 2K","Imagen 4K"] {
+            for i, val in ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 2K","Imagen Ultra 2K"] {
                 if (val == tierStr)
                     tierChoice := i
             }
@@ -443,13 +444,38 @@ ShowTaskForm(*) {
     g.Add("Text", "xm w145", "Tier:")
     g.Add("Text", "x+10 w145", "Aspect Ratio:")
 
-    tier := g.Add("DropDownList", "vTier xm w145 Choose" . tierChoice, ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 2K","Imagen 4K"])
+    tier := g.Add("DropDownList", "vTier xm w145 Choose" . tierChoice, ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 2K","Imagen Ultra 2K"])
     ratio := g.Add("DropDownList", "vRatio x+10 w145 Choose" . ratioChoice, ratioList)
 
     g.Add("Text", "xm w145", "Output Format:")
     g.Add("Text", "x+10 w145", "Cost:")
     fmt := g.Add("DropDownList", "vFormat xm w145 Choose" . formatChoice, ["JPG", "PNG"])
     popCost := g.Add("Text", "x+10 w145", "$0.00")
+
+    UpdatePopCost(*) {
+        agent := ""
+        cost := 0.0
+
+        if RegExMatch(tier.Text, "(.*)\s(\d+K)", &match) {
+            agent := match[1]
+            cost := CalculateCost(agent, match[2])
+        } else {
+            agent := tier.Text
+            cost := CalculateCost(agent)
+        }
+
+        popCost.Value := "$" . Format("{:.3f}", cost)
+        neg.Enabled := !InStr(agent, "Imagen")
+
+        if (InStr(agent, "Imagen") && (currentImgPath != "<GENERATE>" && currentImgPath != "")) {
+            popCost.Value .= " (ERR: GEN ONLY)"
+            popCost.SetFont("cRed")
+        } else {
+            popCost.SetFont("cDefault")
+        }
+    }
+    tier.OnEvent("Change", UpdatePopCost)
+    UpdatePopCost() ; Initialize
 
     btn := g.Add("Button", "Default xm w300 h40", isEdit ? "Update Task" : "Confirm Task")
 
@@ -513,8 +539,8 @@ SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
     if (imgID == "")
         return
 
-    if (InStr(agentName, "Imagen") && InStr(fullPaths, "|")) {
-        MsgBox "Imagen does not support multiple reference images. Please select only one image."
+    if (InStr(agentName, "Imagen") && fullPaths != "<GENERATE>") {
+        MsgBox "Imagen 4 only supports text-to-image generation. Please use a 'GENERATE' task."
         return
     }
 
@@ -831,7 +857,7 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
-    global MODEL1, MODEL2, MODEL3, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
+    global MODEL1, MODEL2, MODEL3, MODEL4, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
     firstAgent := ""
     isMixed := false
     selectedBatchModel := ""
@@ -841,11 +867,13 @@ StartBatch(*) {
         return
     }
     if (Radio_Batch.Value) {
+        firstSize := ""
         for filePath, taskList in ImageTaskMap {
             for taskObj in taskList {
                 if (firstAgent == "") {
                     firstAgent := taskObj.Agent ; Access .Agent instead of .Model
-                } else if (taskObj.Agent != firstAgent) {
+                    firstSize := taskObj.Size
+                } else if (taskObj.Agent != firstAgent || (InStr(firstAgent, "Imagen") && taskObj.Size != firstSize)) {
                     isMixed := true
                     break 2
                 }
@@ -874,9 +902,12 @@ StartBatch(*) {
         try {
             if InStr(firstAgent, "Flash")
                 selectedBatchModel := MODEL1
-            else if InStr(firstAgent, "Imagen")
-                selectedBatchModel := MODEL3
-            else
+            else if InStr(firstAgent, "Imagen") {
+                if (InStr(firstAgent, "Ultra"))
+                    selectedBatchModel := MODEL4
+                else
+                    selectedBatchModel := MODEL3
+            } else
                 selectedBatchModel := MODEL2
 
             batchPath := CreateBatchFile(ImageTaskMap, selectedBatchModel)
@@ -958,7 +989,7 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, MODEL3, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
 
     MODEL_ID := ""
     payload := ""
@@ -985,9 +1016,12 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
 
     if InStr(agent, "Flash")
         MODEL_ID := MODEL1
-    else if InStr(agent, "Imagen")
-        MODEL_ID := MODEL3
-    else
+    else if InStr(agent, "Imagen") {
+        if (InStr(agent, "Ultra"))
+            MODEL_ID := MODEL4
+        else
+            MODEL_ID := MODEL3
+    } else
         MODEL_ID := MODEL2
     if (useCurl) {
         payload := CreateJsonPayload(taskObj, fullPath)
@@ -999,9 +1033,7 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
 
         authHeader := ""
         if InStr(agent, "Imagen") {
-            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
-            if (GCP_TOKEN != "")
-                authHeader := ' -H "Authorization: Bearer ' . GCP_TOKEN . '"'
+            apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
         } else {
             apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
         }
@@ -1040,15 +1072,13 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         whr.SetTimeouts(30000, 60000, 600000, 600000)
 
         if InStr(agent, "Imagen") {
-            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
+            apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
         } else {
             apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
         }
 
         whr.Open("POST", apiUrl, false)
         whr.SetRequestHeader("Content-Type", "application/json")
-        if (InStr(agent, "Imagen") && GCP_TOKEN != "")
-            whr.SetRequestHeader("Authorization", "Bearer " . GCP_TOKEN)
 
         whr.Send(payload)
 
@@ -1137,20 +1167,13 @@ CreateJsonPayload(taskObj, taskImagePath) {
     isImagen := InStr(taskObj.Agent, "Imagen")
 
     if (isImagen) {
-        promptText := "USER DIRECTIVE: " . taskObj.Prompt . ". Aspect Ratio: " . taskObj.Ratio . ". Avoid: " . taskObj.NegativePrompt
-        imagePart := ""
-        if (taskImagePath != "<GENERATE>" && taskImagePath != "") {
-             b64 := FileToBase64(taskImagePath)
-             mime := (taskObj.Format = "PNG") ? "image/png" : "image/jpeg"
-             imagePart := ', "image": {"bytesBase64Encoded": "' . b64 . '", "mimeType": "' . mime . '"}'
-        }
+        promptText := "USER DIRECTIVE: " . taskObj.Prompt . ". Aspect Ratio: " . taskObj.Ratio
 
         payload := '{'
-            . '"instances": [{"prompt": "' . StrReplace(StrReplace(promptText, '"', '\"'), "`n", " ") . '"' . imagePart . '}], '
+            . '"instances": [{"prompt": "' . StrReplace(StrReplace(promptText, '"', '\"'), "`n", " ") . '"}], '
             . '"parameters": {'
                 . '"sampleCount": 1, '
                 . '"aspectRatio": "' . taskObj.Ratio . '"'
-                . (taskObj.NegativePrompt != "" ? ', "negativePrompt": "' . StrReplace(StrReplace(taskObj.NegativePrompt, '"', '\"'), "`n", " ") . '"' : "")
                 . (taskObj.Size != "1K" ? ', "sampleImageSize": "' . taskObj.Size . '"' : "")
             . '}'
         . '}'
