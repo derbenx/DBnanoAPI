@@ -306,7 +306,7 @@ LoadExistingJobs() {
     SetTimer(UpdateMonitorProgress, 1000)
 }
 
-CalculateCost(agent, res) {
+CalculateCost(agent, res := "1K") {
  full := agent . " " . res
  base := 0.134 ; pro 1K & pro 2k
  nano := 1
@@ -453,17 +453,25 @@ ShowTaskForm(*) {
     popCost := g.Add("Text", "x+10 w145", "$0.00")
 
     UpdatePopCost(*) {
+        agent := ""
+        cost := 0.0
+
         if RegExMatch(tier.Text, "(.*)\s(\d+K)", &match) {
             agent := match[1]
             cost := CalculateCost(agent, match[2])
-            popCost.Value := "$" . Format("{:.3f}", cost)
+        } else {
+            agent := tier.Text
+            cost := CalculateCost(agent)
+        }
 
-            if (InStr(agent, "Imagen") && currentImgPath != "<GENERATE>") {
-                popCost.Value .= " (ERR: GEN ONLY)"
-                popCost.SetFont("cRed")
-            } else {
-                popCost.SetFont("cDefault")
-            }
+        popCost.Value := "$" . Format("{:.3f}", cost)
+        neg.Enabled := !InStr(agent, "Imagen")
+
+        if (InStr(agent, "Imagen") && (currentImgPath != "<GENERATE>" && currentImgPath != "")) {
+            popCost.Value .= " (ERR: GEN ONLY)"
+            popCost.SetFont("cRed")
+        } else {
+            popCost.SetFont("cDefault")
         }
     }
     tier.OnEvent("Change", UpdatePopCost)
@@ -1159,14 +1167,13 @@ CreateJsonPayload(taskObj, taskImagePath) {
     isImagen := InStr(taskObj.Agent, "Imagen")
 
     if (isImagen) {
-        promptText := "USER DIRECTIVE: " . taskObj.Prompt . ". Aspect Ratio: " . taskObj.Ratio . ". Avoid: " . taskObj.NegativePrompt
+        promptText := "USER DIRECTIVE: " . taskObj.Prompt . ". Aspect Ratio: " . taskObj.Ratio
 
         payload := '{'
             . '"instances": [{"prompt": "' . StrReplace(StrReplace(promptText, '"', '\"'), "`n", " ") . '"}], '
             . '"parameters": {'
                 . '"sampleCount": 1, '
                 . '"aspectRatio": "' . taskObj.Ratio . '"'
-                . (taskObj.NegativePrompt != "" ? ', "negativePrompt": "' . StrReplace(StrReplace(taskObj.NegativePrompt, '"', '\"'), "`n", " ") . '"' : "")
                 . (taskObj.Size != "1K" ? ', "imageSize": "' . taskObj.Size . '"' : "")
             . '}'
         . '}'
