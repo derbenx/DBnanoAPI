@@ -1,16 +1,17 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
-;Todo
-
-
 ; --- CONFIG ---
 global API_KEY := "USE YER OWN" ; log in to https://aistudio.google.com/ create new project, then create an API key.
 global hurl := "https://generativelanguage.googleapis.com/v1beta/models/"
+global GCP_PROJECT := "YOUR_PROJECT_ID"
+global GCP_REGION := "us-central1"
+global GCP_TOKEN := "" ; Get via: gcloud auth print-access-token
 global OutputDir := A_ScriptDir "\img"
-global MODEL1 := "gemini-2.5-flash-image"
-global MODEL2 := "gemini-3-pro-image-preview"
-global MODEL3 := "imagen-4.0-generate-001"
+global MODEL1 := "gemini-2.5-flash-image" ; 1k
+global MODEL2 := "gemini-3-pro-image-preview" ; 1k 2k 4k
+global MODEL3 := "imagen-4.0-generate-001" ; 2k
+global MODEL4 := "imagen-4.0-ultra-generate-001" ; 4k
 global encourageEdt := "You are a professional image-restoration engine. Your goal is to apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear, and perfectly aligned with the reference. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage."
 global encourageGen := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
 global proVal := "everyone stands on top of a large pile of burgers. the burgers deform under load."
@@ -45,7 +46,7 @@ MyGui := Gui("+Resize", "Gemini 2026 Pro Editor")
 MyGui.OnEvent("DropFiles", Gui_DropFiles)
 MyGui.SetFont("s10", "Segoe UI")
 
-Tab := MyGui.Add("Tab3", "w" . imgw*2+40 . " h500", ["Create", "Batches"])
+Tab := MyGui.Add("Tab3", "w" . imgw*2+40 . " h500", ["Create", "Batches","Help"])
 
 Tab.UseTab(1)
 LV_Images := MyGui.Add("ListView", "w" . imgw . " h" . imgh, ["#", "MBs", "tasks", "Image", "Path"])
@@ -90,6 +91,9 @@ batView := MyGui.Add("ListView", "x20 y50 w" . imgw*2+40 . " h380 Grid", ["JobID
 Btn_ClearBatches := MyGui.Add("Button", "x20 yp+390 w150 h30", "Clear Finished")
 Btn_ClearBatches.OnEvent("Click", ClearFinishedJobs)
 batBar := MyGui.Add("Progress", "x20 y480 w" . imgw*2+20 . " h15 cGreen", 0)
+
+Tab.UseTab(3)
+HelpDisp := MyGui.Add("Text", "w" . imgw*2+40 . " h600", "Nano Banana Flash and Nano Banana Pro can do multiple images and batch.`nImagen does single images only.`n`nCosts are based on 2026 data, subject to change")
 
 Tab.UseTab()
 global ModelLog := MyGui.Add("Edit", "xm y500 w" . imgw*2+40 . " r5 +ReadOnly +vModelLog", "")
@@ -302,18 +306,25 @@ LoadExistingJobs() {
     SetTimer(UpdateMonitorProgress, 1000)
 }
 
-
-
-
-
-
-
-
-
 CalculateCost(agent, res) {
-    base := (agent = "Nano Flash") ? 0.039 : (res = "4K") ? 0.24 : 0.134
-    ; Apply 50% discount if Batch Mode is selected
-    return Radio_Batch.Value ? (base * 0.5) : base
+ base := 0.134 ; pro 1K & pro 2k
+ nano := 1
+ if (InStr(agent, "Imagen 2K")) {
+  base:= 0.04
+  nano:=0
+ }
+ if (InStr(agent, "Imagen 4K")) {
+  base:= 0.06
+  nano:=0
+ }
+ if (InStr(agent, "Pro 4K")) {
+  base:= 0.24
+ }
+ if (InStr(agent, "Flash")) {
+  base:= 0.039
+ }
+ ; Apply 50% discount if Batch Mode is selected
+ return Radio_Batch.Value && nano ? (base * 0.5) : base
 }
 
 ; --- 2. DYNAMIC TASK FORM ---
@@ -397,7 +408,7 @@ ShowTaskForm(*) {
             nVal := task.NegativePrompt
 
             tierStr := task.Agent . " " . task.Size
-            for i, val in ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 1K","Imagen 2K"] {
+            for i, val in ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 2K","Imagen 4K"] {
                 if (val == tierStr)
                     tierChoice := i
             }
@@ -432,11 +443,13 @@ ShowTaskForm(*) {
     g.Add("Text", "xm w145", "Tier:")
     g.Add("Text", "x+10 w145", "Aspect Ratio:")
 
-    tier := g.Add("DropDownList", "vTier xm w145 Choose" . tierChoice, ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 1K","Imagen 2K"])
+    tier := g.Add("DropDownList", "vTier xm w145 Choose" . tierChoice, ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 2K","Imagen 4K"])
     ratio := g.Add("DropDownList", "vRatio x+10 w145 Choose" . ratioChoice, ratioList)
 
     g.Add("Text", "xm w145", "Output Format:")
+    g.Add("Text", "x+10 w145", "Cost:")
     fmt := g.Add("DropDownList", "vFormat xm w145 Choose" . formatChoice, ["JPG", "PNG"])
+    popCost := g.Add("Text", "x+10 w145", "$0.00")
 
     btn := g.Add("Button", "Default xm w300 h40", isEdit ? "Update Task" : "Confirm Task")
 
@@ -469,7 +482,10 @@ ProcessMergedSelection(Prompt, FullTierName, EntryGui) {
 
 SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
     ; // Extract Agent and Size from the Tier string (e.g., "Nano Pro 4K")
+    match := ""
     RegExMatch(Data.Tier, "(.*)\s(\d+K)", &match)
+    agentName := (match) ? match[1] : "Unknown"
+    agentSize := (match) ? match[2] : "1K"
 
     ; // 1. Collect paths and IDs for the task
     imgID := taskID
@@ -497,13 +513,18 @@ SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
     if (imgID == "")
         return
 
+    if (InStr(agentName, "Imagen") && InStr(fullPaths, "|")) {
+        MsgBox "Imagen does not support multiple reference images. Please select only one image."
+        return
+    }
+
     ; // 2. Create the task object
     newTask := {
         ID: imgID,
         Prompt: Data.Prompt,
         NegativePrompt: Data.Neg,
-        Agent: match[1],
-        Size: match[2],
+        Agent: agentName,
+        Size: agentSize,
         Ratio: Data.Ratio,
         Format: Data.Format,
         Status: "Pending",
@@ -608,10 +629,11 @@ ProcessBatchSubCurl(pid, resFile, payloadFile) {
     resText := ""
     if FileExist(resFile) {
         resText := FileRead(resFile)
-        FileDelete(resFile)
+        ; FileDelete(resFile)
     }
-    if FileExist(payloadFile)
-        FileDelete(payloadFile)
+    if FileExist(payloadFile) {
+        ; FileDelete(payloadFile)
+    }
 
     if (resText == "" || InStr(resText, '"error"')) {
         BatchError("Batch Submission Failed: " . resText)
@@ -668,8 +690,8 @@ BatchError(msg) {
 
 CreateBatchFile(TaskMap, selectedModel) {
     batchPath := A_ScriptDir "\batch_job.jsonl"
-    if FileExist(batchPath)
-        FileDelete(batchPath)
+    ; if FileExist(batchPath)
+    ;    FileDelete(batchPath)
 
     fileObj := FileOpen(batchPath, "w", "UTF-8-RAW")
     modelPath := "models/" . selectedModel
@@ -809,14 +831,16 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
+    global MODEL1, MODEL2, MODEL3, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
+    firstAgent := ""
+    isMixed := false
+    selectedBatchModel := ""
+
     if (LV_Tasks.GetCount() == 0) {
         MsgBox "No tasks to run!"
         return
     }
     if (Radio_Batch.Value) {
-        firstAgent := "" ; Changed from firstModel
-        isMixed := false
-
         for filePath, taskList in ImageTaskMap {
             for taskObj in taskList {
                 if (firstAgent == "") {
@@ -829,7 +853,12 @@ StartBatch(*) {
         }
 
         if (isMixed) {
-            result := MsgBox("Warning: Your batch contains a mix of models (Flash and Pro).`n`nGoogle Batch API requires all tasks in a single job to use the SAME model.")
+            result := MsgBox("Warning: Your batch contains a mix of models (Flash, Pro, or Imagen).`n`nGoogle Batch API requires all tasks in a single job to use the SAME model.")
+            return
+        }
+
+        if (InStr(firstAgent, "Imagen")) {
+            MsgBox("Imagen does not currently support Batch Mode in this application. Please use Immediate mode.")
             return
         }
     }
@@ -843,7 +872,13 @@ StartBatch(*) {
         SetLoadingState(true)
 
         try {
-            selectedBatchModel := InStr(firstAgent, "Flash") ? MODEL1 : MODEL2
+            if InStr(firstAgent, "Flash")
+                selectedBatchModel := MODEL1
+            else if InStr(firstAgent, "Imagen")
+                selectedBatchModel := MODEL3
+            else
+                selectedBatchModel := MODEL2
+
             batchPath := CreateBatchFile(ImageTaskMap, selectedBatchModel)
             LogMessage("BATCH START: File created at " . batchPath)
 
@@ -923,7 +958,11 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, hurl, encourage, encourge, useCurl, PendingTasks, CurlTimers
+    global API_KEY, MODEL1, MODEL2, MODEL3, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+
+    MODEL_ID := ""
+    payload := ""
+    apiUrl := ""
 
     ; // Extract variables from the task object
     agent := taskObj.Agent
@@ -944,16 +983,35 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
     }
 
 
-    MODEL_ID := InStr(agent, "Flash") ? MODEL1 : MODEL2
+    if InStr(agent, "Flash")
+        MODEL_ID := MODEL1
+    else if InStr(agent, "Imagen")
+        MODEL_ID := MODEL3
+    else
+        MODEL_ID := MODEL2
     if (useCurl) {
         payload := CreateJsonPayload(taskObj, fullPath)
         payloadFile := A_ScriptDir . "\gemini_pay_" . A_TickCount . "_" . batchIdx . ".json"
         responseFile := A_ScriptDir . "\gemini_res_" . A_TickCount . "_" . batchIdx . ".json"
-        if FileExist(payloadFile)
-            FileDelete(payloadFile)
+
+        ; FileDelete(payloadFile) ; User commented out FileDeletes
         FileAppend(payload, payloadFile, "UTF-8-RAW")
-        apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
-        curlCmd := 'curl -s -N -X POST "' . apiUrl . '" -H "Content-Type: application/json" -d "@' . payloadFile . '" -o "' . responseFile . '"'
+
+        authHeader := ""
+        if InStr(agent, "Imagen") {
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
+            if (GCP_TOKEN != "")
+                authHeader := ' -H "Authorization: Bearer ' . GCP_TOKEN . '"'
+        } else {
+            apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
+        }
+
+        LogMessage("Task " . batchIdx . " API URL: " . apiUrl)
+        LogMessage("Task " . batchIdx . " Payload: " . payload)
+
+        curlLogFile := A_ScriptDir . "\gemini_curl_err_" . A_TickCount . "_" . batchIdx . ".log"
+        curlCmd := 'curl -s -S -N -X POST "' . apiUrl . '" -H "Content-Type: application/json"' . authHeader . ' -d "@' . payloadFile . '" -o "' . responseFile . '" 2> "' . curlLogFile . '"'
+        LogMessage("Task " . batchIdx . " Curl Command: " . curlCmd)
         Run(curlCmd, , "Hide", &pid)
         global PendingTasks += 1
         CurlTimers[pid] := CheckCurlProgress.Bind(pid, responseFile, payloadFile, batchIdx, nameNoExt)
@@ -980,10 +1038,18 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         whr := ComObject("WinHttp.WinHttpRequest.5.1")
         ;SetTimeouts(resolve, connect, send, receive) in milliseconds
         whr.SetTimeouts(30000, 60000, 600000, 600000)
-        apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
+
+        if InStr(agent, "Imagen") {
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
+        } else {
+            apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
+        }
 
         whr.Open("POST", apiUrl, false)
         whr.SetRequestHeader("Content-Type", "application/json")
+        if (InStr(agent, "Imagen") && GCP_TOKEN != "")
+            whr.SetRequestHeader("Authorization", "Bearer " . GCP_TOKEN)
+
         whr.Send(payload)
 
         ; --- DEBUG: LOG WHAT IS RECEIVED ---
@@ -1005,8 +1071,8 @@ if (whr.Status == 200) {
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; Scroll to bottom
     }
 
-    if RegExMatch(responseText, 's)"data":\s*"([^"]+)"', &imgMatch) {
-        binData := Base64ToBin(imgMatch[1])
+    if RegExMatch(responseText, 's)"(data|bytesBase64Encoded)":\s*"([^"]+)"', &imgMatch) {
+        binData := Base64ToBin(imgMatch[2])
         finalExt := (InStr(responseText, "image/png")) ? "png" : "jpg"
         outPath := OutputDir "\" nameNoExt "_" A_Now "." finalExt
 
@@ -1066,40 +1132,76 @@ FileToBase64(FilePath) {
 }
 
 CreateJsonPayload(taskObj, taskImagePath) {
-    global encourage
+    global encourageGen, encourageEdt, DEBUG
+
+    isImagen := InStr(taskObj.Agent, "Imagen")
+
+    if (isImagen) {
+        promptText := "USER DIRECTIVE: " . taskObj.Prompt . ". Aspect Ratio: " . taskObj.Ratio . ". Avoid: " . taskObj.NegativePrompt
+        imagePart := ""
+        if (taskImagePath != "<GENERATE>" && taskImagePath != "") {
+             b64 := FileToBase64(taskImagePath)
+             mime := (taskObj.Format = "PNG") ? "image/png" : "image/jpeg"
+             imagePart := ', "image": {"bytesBase64Encoded": "' . b64 . '", "mimeType": "' . mime . '"}'
+        }
+
+        payload := '{'
+            . '"instances": [{"prompt": "' . StrReplace(StrReplace(promptText, '"', '\"'), "`n", " ") . '"' . imagePart . '}], '
+            . '"parameters": {'
+                . '"sampleCount": 1, '
+                . '"aspectRatio": "' . taskObj.Ratio . '"'
+                . (taskObj.NegativePrompt != "" ? ', "negativePrompt": "' . StrReplace(StrReplace(taskObj.NegativePrompt, '"', '\"'), "`n", " ") . '"' : "")
+                . (taskObj.Size != "1K" ? ', "sampleImageSize": "' . taskObj.Size . '"' : "")
+            . '}'
+        . '}'
+        return payload
+    }
+
+    enc := ""
+    fullPrompt := ""
+    cleanPrompt := ""
+    cleanEncourage := ""
+    icfg := ""
+    payload := ""
+
+    ; Select encouragement based on whether we are generating from scratch or editing
+    enc := (taskImagePath == "<GENERATE>") ? encourageGen : encourageEdt
+
+    if (DEBUG)
+        LogMessage("Payload creation for " . taskImagePath . " using " . ((taskImagePath == "<GENERATE>") ? "encourageGen" : "encourageEdt"))
 
     ; Merge instructions into the text prompt since Gemini doesn't support them in config
-    fullPrompt := "USER DIRECTIVE: " . TaskObj.Prompt
-                . ". Aspect Ratio: " . TaskObj.Ratio
-                . ". Avoid: " . TaskObj.NegativePrompt
+    fullPrompt := "USER DIRECTIVE: " . taskObj.Prompt
+                . ". Aspect Ratio: " . taskObj.Ratio
+                . ". Avoid: " . taskObj.NegativePrompt
 
     ; Sanitize prompt for JSON
     cleanPrompt := StrReplace(fullPrompt, '"', '\"')
     cleanPrompt := StrReplace(cleanPrompt, "`r", "")
     cleanPrompt := StrReplace(cleanPrompt, "`n", " ")
 
-    cleanEncourage := StrReplace(encourage, '"', '\"')
+    cleanEncourage := StrReplace(enc, '"', '\"')
     cleanEncourage := StrReplace(cleanEncourage, "`r", "")
     cleanEncourage := StrReplace(cleanEncourage, "`n", " ")
 
-    icfg := '"aspectRatio": "' . TaskObj.Ratio . '"'
-    if (TaskObj.Size != "1K")
-        icfg .= ', "image_size": "' . TaskObj.Size . '"'
+    icfg := '"aspect_ratio": "' . taskObj.Ratio . '"'
+    if (taskObj.Size != "1K")
+        icfg .= ', "image_size": "' . taskObj.Size . '"'
 
     if (taskImagePath == "<GENERATE>") {
         payload := '{'
             . '"contents": [{"parts": [{"text": "' . cleanPrompt . '"}]}], '
             . '"system_instruction": {"parts": [{"text": "' . cleanEncourage . '"}]}, '
-            . '"safetySettings": ['
+            . '"safety_settings": ['
                 . '{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, '
                 . '{"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"}, '
                 . '{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, '
                 . '{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}'
             . '], '
-            . '"generationConfig": {'
+            . '"generation_config": {'
                 . '"candidate_count": 1, '
                 . '"response_modalities": ["IMAGE"], '
-                . '"imageConfig": {' . icfg . '}'
+                . '"image_config": {' . icfg . '}'
             . '}'
         . '}'
         return payload
@@ -1110,7 +1212,7 @@ CreateJsonPayload(taskObj, taskImagePath) {
     for path in paths {
         if (path == "")
             continue
-        mime := (TaskObj.Format = "PNG") ? "image/png" : "image/jpeg"
+        mime := (taskObj.Format = "PNG") ? "image/png" : "image/jpeg"
         b64 := FileToBase64(path)
         imageParts .= ', {"inline_data": {"mime_type": "' . mime . '", "data": "' . b64 . '"}}'
     }
@@ -1121,16 +1223,16 @@ CreateJsonPayload(taskObj, taskImagePath) {
             . imageParts
         . ']}], '
         . '"system_instruction": {"parts": [{"text": "' . cleanEncourage . '"}]}, '
-        . '"safetySettings": ['
+        . '"safety_settings": ['
             . '{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, '
             . '{"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"}, '
             . '{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, '
             . '{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}'
         . '], '
-        . '"generationConfig": {'
+        . '"generation_config": {'
             . '"candidate_count": 1, '
             . '"response_modalities": ["IMAGE"], '
-            . '"imageConfig": {' . icfg . '}'
+            . '"image_config": {' . icfg . '}'
         . '}'
     . '}'
 
@@ -1214,10 +1316,11 @@ ProcessBatchUploadCurl(pid, resFile, tempBodyFile, selectedModel) {
     resText := ""
     if FileExist(resFile) {
         resText := FileRead(resFile)
-        FileDelete(resFile)
+        ; FileDelete(resFile)
     }
-    if FileExist(tempBodyFile)
-        FileDelete(tempBodyFile)
+    if FileExist(tempBodyFile) {
+        ; FileDelete(tempBodyFile)
+    }
 
     if RegExMatch(resText, '"uri":\s*"([^"]+)"', &match) {
         LogMessage("BATCH UPLOAD SUCCESS: URI is " . match[1])
@@ -1329,7 +1432,7 @@ ProcessBatchStatus(pid, resFile, jobID, targetRow) {
 
         if FileExist(resFile) {
             responseText := FileRead(resFile)
-            FileDelete(resFile)
+            ; FileDelete(resFile)
             HandleBatchStatus(responseText, jobID, targetRow)
         }
     }
@@ -1410,7 +1513,7 @@ ProcessBatchDownload(pid, resFile, targetRow) {
 
         if FileExist(resFile) {
             responseText := FileRead(resFile)
-            FileDelete(resFile)
+            ; FileDelete(resFile)
             HandleBatchDownload(responseText, targetRow)
         }
     }
@@ -1522,7 +1625,7 @@ TestAPIConnection(*) {
             Sleep(50)
             if FileExist(resFile) {
                 responseText := FileRead(resFile)
-                FileDelete(resFile)
+                ; FileDelete(resFile)
                 status := 200
             }
         } else {
@@ -1784,6 +1887,7 @@ CheckCurlProgress(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
 }
 
 ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
+    global DEBUG
     try {
         if CurlTimers.Has(pid) {
             SetTimer(CurlTimers[pid], 0)
@@ -1793,19 +1897,37 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
         responseText := ""
         if FileExist(responseFile) {
             responseText := FileRead(responseFile)
-            FileDelete(responseFile)
+            ; FileDelete(responseFile)
         }
 
-        if FileExist(payloadFile)
-            FileDelete(payloadFile)
+        LogMessage("Task " . batchIdx . " Response: " . responseText)
+
+        ; Try to find curl error log if response is empty
+        if (responseText == "") {
+            Loop Files, A_ScriptDir . "\gemini_curl_err_*.log" {
+                if InStr(A_LoopFileName, "_" . batchIdx . ".log") {
+                    errText := FileRead(A_LoopFileFullPath)
+                    LogMessage("Task " . batchIdx . " Curl Error: " . errText)
+                    ; FileDelete(A_LoopFileFullPath)
+                    break
+                }
+            }
+        }
+
+        ; if FileExist(payloadFile)
+        ;    FileDelete(payloadFile)
 
         global PendingTasks -= 1
 
         if (responseText != "") {
             ; Use InStr/SubStr for robust extraction from potentially huge JSON strings
             p1 := InStr(responseText, '"data":')
+            if (!p1)
+                p1 := InStr(responseText, '"bytesBase64Encoded":')
+
             if (p1) {
-                p2 := InStr(responseText, '"', , p1 + 7)
+                pStart := (InStr(SubStr(responseText, p1), ":") + p1)
+                p2 := InStr(responseText, '"', , pStart)
                 p3 := InStr(responseText, '"', , p2 + 1)
                 if (p2 && p3) {
                     base64Data := SubStr(responseText, p2 + 1, p3 - p2 - 1)
@@ -1837,10 +1959,10 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
                     LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                 }
             } else {
-                if InStr(responseText, "finishReason") {
-                    ModelLogMsg("Curl task " . batchIdx . " was blocked or failed.")
+                if (RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m)) {
+                    ModelLogMsg("Curl task " . batchIdx . " failed. Reason: " . m[1])
                 } else {
-                    ModelLogMsg("Curl response (no image data).")
+                    ModelLogMsg("Curl task " . batchIdx . " returned no image data. See debug.log.")
                 }
                 LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
             }
@@ -1891,4 +2013,3 @@ CleanupJobsFile() {
         ModelLogMsg("[Error] Failed to update jobs.txt: " . e.Message)
     }
 }
-
