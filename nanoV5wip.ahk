@@ -307,20 +307,21 @@ LoadExistingJobs() {
 }
 
 CalculateCost(agent, res) {
+ full := agent . " " . res
  base := 0.134 ; pro 1K & pro 2k
  nano := 1
- if (InStr(agent, "Imagen 2K")) {
+ if (InStr(full, "Imagen 2K")) {
   base:= 0.04
   nano:=0
  }
- if (InStr(agent, "Imagen 4K")) {
+ if (InStr(full, "Imagen 4K")) {
   base:= 0.06
   nano:=0
  }
- if (InStr(agent, "Pro 4K")) {
+ if (InStr(full, "Pro 4K")) {
   base:= 0.24
  }
- if (InStr(agent, "Flash")) {
+ if (InStr(full, "Flash")) {
   base:= 0.039
  }
  ; Apply 50% discount if Batch Mode is selected
@@ -450,6 +451,15 @@ ShowTaskForm(*) {
     g.Add("Text", "x+10 w145", "Cost:")
     fmt := g.Add("DropDownList", "vFormat xm w145 Choose" . formatChoice, ["JPG", "PNG"])
     popCost := g.Add("Text", "x+10 w145", "$0.00")
+
+    UpdatePopCost(*) {
+        if RegExMatch(tier.Text, "(.*)\s(\d+K)", &match) {
+            cost := CalculateCost(match[1], match[2])
+            popCost.Value := "$" . Format("{:.3f}", cost)
+        }
+    }
+    tier.OnEvent("Change", UpdatePopCost)
+    UpdatePopCost() ; Initialize
 
     btn := g.Add("Button", "Default xm w300 h40", isEdit ? "Update Task" : "Confirm Task")
 
@@ -831,7 +841,7 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
-    global MODEL1, MODEL2, MODEL3, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
+    global MODEL1, MODEL2, MODEL3, MODEL4, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
     firstAgent := ""
     isMixed := false
     selectedBatchModel := ""
@@ -841,11 +851,13 @@ StartBatch(*) {
         return
     }
     if (Radio_Batch.Value) {
+        firstSize := ""
         for filePath, taskList in ImageTaskMap {
             for taskObj in taskList {
                 if (firstAgent == "") {
                     firstAgent := taskObj.Agent ; Access .Agent instead of .Model
-                } else if (taskObj.Agent != firstAgent) {
+                    firstSize := taskObj.Size
+                } else if (taskObj.Agent != firstAgent || (InStr(firstAgent, "Imagen") && taskObj.Size != firstSize)) {
                     isMixed := true
                     break 2
                 }
@@ -874,9 +886,12 @@ StartBatch(*) {
         try {
             if InStr(firstAgent, "Flash")
                 selectedBatchModel := MODEL1
-            else if InStr(firstAgent, "Imagen")
-                selectedBatchModel := MODEL3
-            else
+            else if InStr(firstAgent, "Imagen") {
+                if (firstSize == "4K")
+                    selectedBatchModel := MODEL4
+                else
+                    selectedBatchModel := MODEL3
+            } else
                 selectedBatchModel := MODEL2
 
             batchPath := CreateBatchFile(ImageTaskMap, selectedBatchModel)
@@ -958,7 +973,7 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, MODEL3, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
 
     MODEL_ID := ""
     payload := ""
@@ -985,9 +1000,12 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
 
     if InStr(agent, "Flash")
         MODEL_ID := MODEL1
-    else if InStr(agent, "Imagen")
-        MODEL_ID := MODEL3
-    else
+    else if InStr(agent, "Imagen") {
+        if (size == "4K")
+            MODEL_ID := MODEL4
+        else
+            MODEL_ID := MODEL3
+    } else
         MODEL_ID := MODEL2
     if (useCurl) {
         payload := CreateJsonPayload(taskObj, fullPath)
@@ -999,9 +1017,7 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
 
         authHeader := ""
         if InStr(agent, "Imagen") {
-            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
-            if (GCP_TOKEN != "")
-                authHeader := ' -H "Authorization: Bearer ' . GCP_TOKEN . '"'
+            apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
         } else {
             apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
         }
@@ -1040,15 +1056,13 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         whr.SetTimeouts(30000, 60000, 600000, 600000)
 
         if InStr(agent, "Imagen") {
-            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
+            apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
         } else {
             apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
         }
 
         whr.Open("POST", apiUrl, false)
         whr.SetRequestHeader("Content-Type", "application/json")
-        if (InStr(agent, "Imagen") && GCP_TOKEN != "")
-            whr.SetRequestHeader("Authorization", "Bearer " . GCP_TOKEN)
 
         whr.Send(payload)
 
@@ -1151,7 +1165,7 @@ CreateJsonPayload(taskObj, taskImagePath) {
                 . '"sampleCount": 1, '
                 . '"aspectRatio": "' . taskObj.Ratio . '"'
                 . (taskObj.NegativePrompt != "" ? ', "negativePrompt": "' . StrReplace(StrReplace(taskObj.NegativePrompt, '"', '\"'), "`n", " ") . '"' : "")
-                . (taskObj.Size != "1K" ? ', "sampleImageSize": "' . taskObj.Size . '"' : "")
+                . (taskObj.Size != "1K" ? ', "imageSize": "' . taskObj.Size . '"' : "")
             . '}'
         . '}'
         return payload
