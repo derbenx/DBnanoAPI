@@ -74,6 +74,8 @@ Radio_Immediate := MyGui.Add("Radio", "x+10 yp Checked", "Immediate")
 Radio_Immediate.OnEvent("Click", RefreshAllCosts) ; Add this trigger
 Radio_Batch := MyGui.Add("Radio", "x+20", "Batch")
 Radio_Batch.OnEvent("Click", RefreshAllCosts) ; Add this trigger
+Radio_Upscale := MyGui.Add("Radio", "x+20", "Upscale")
+Radio_Upscale.OnEvent("Click", RefreshAllCosts) ; Add this trigger
 
 Btn_load := MyGui.Add("Button", "x30 yp+40 w100 h30", "Load CSV")
 Btn_load.OnEvent("Click", LoadCSV)
@@ -258,7 +260,11 @@ UpdatePreview(ImgPath) {
 }
 
 RefreshAllCosts(*) {
-    Btn_Run.Text := Radio_Batch.Value ? "RUN BATCH" : "RUN IMMEDIATE"
+    if (Radio_Upscale.Value)
+        Btn_Run.Text := "RUN UPSCALE"
+    else
+        Btn_Run.Text := Radio_Batch.Value ? "RUN BATCH" : "RUN IMMEDIATE"
+
     ; Loop through every image path in your map
     for path, tasks in ImageTaskMap {
         ; Loop through every task for that image
@@ -274,6 +280,7 @@ RefreshAllCosts(*) {
     UpdateTotalDisplay()
     ; Update the ListView rows to show the new prices
     RefreshTaskTable()
+    UpdateButtonStates()
 }
 
 LoadExistingJobs() {
@@ -309,7 +316,7 @@ LoadExistingJobs() {
 
 CalculateCost(agent, res := "1K") {
  if (agent == "Upscale")
-    return 0.00003
+    return 0.003
 
  full := agent . " " . res
  base := 0.134 ; pro 1K & pro 2k
@@ -394,7 +401,6 @@ ShowTaskForm(*) {
     ratioChoice := 5   ; Default: 1:1 (index 5 in the list below)
     formatChoice := 1  ; Default: JPG
     localIdx := 0      ; This will track the task's position inside the Map array
-    typeChoice := 1    ; Default: Standard
 
     ; // Set ratio default based on image detection
     ratioList := ["9:16","4:5","3:4","2:3", "1:1", "3:2", "4:3","5:4","16:9","21:9"]
@@ -412,10 +418,6 @@ ShowTaskForm(*) {
             task := ImageTaskMap[imgIDDisplay][localIdx]
             pVal := task.Prompt
             nVal := task.NegativePrompt
-
-            if (task.Agent == "Upscale") {
-                typeChoice := 2
-            }
 
             tierStr := task.Agent . " " . task.Size
             for i, val in ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 2K","Imagen Ultra 2K"] {
@@ -444,11 +446,7 @@ ShowTaskForm(*) {
     MyGui.Opt("+Disabled")
     g.SetFont("s9", "Segoe UI")
 
-    g.Add("Text",, "Task Type:")
-    radNormal  := g.Add("Radio", "vTaskType xm " . (typeChoice == 1 ? "Checked" : ""), "Standard")
-    radUpscale := g.Add("Radio", "x+10 " . (typeChoice == 2 ? "Checked" : ""), "Upscale (0.003¢)")
-
-    g.Add("Text", "xm", "Positive Prompt (What to add/change):")
+    g.Add("Text",, "Positive Prompt (What to add/change):")
     ed := g.Add("Edit", "vPrompt w300 r3", pVal)
 
     g.Add("Text",, "Negative Prompt (What to avoid):")
@@ -466,34 +464,21 @@ ShowTaskForm(*) {
     popCost := g.Add("Text", "x+10 w145", "$0.00")
 
     UpdatePopCost(*) {
-        isUpscale := radUpscale.Value
         agent := ""
         cost := 0.0
 
-        if (isUpscale) {
-            agent := "Upscale"
-            cost := 0.00003
+        if RegExMatch(tier.Text, "(.*)\s(\d+K)", &match) {
+            agent := match[1]
+            cost := CalculateCost(agent, match[2])
         } else {
-            if RegExMatch(tier.Text, "(.*)\s(\d+K)", &match) {
-                agent := match[1]
-                cost := CalculateCost(agent, match[2])
-            } else {
-                agent := tier.Text
-                cost := CalculateCost(agent)
-            }
+            agent := tier.Text
+            cost := CalculateCost(agent)
         }
 
-        popCost.Value := "$" . (isUpscale ? Format("{:.5f}", cost) : Format("{:.3f}", cost))
+        popCost.Value := "$" . Format("{:.3f}", cost)
+        neg.Enabled := !InStr(agent, "Imagen")
 
-        ed.Enabled := !isUpscale
-        neg.Enabled := !isUpscale && !InStr(agent, "Imagen")
-        tier.Enabled := !isUpscale
-        ratio.Enabled := !isUpscale
-
-        if (isUpscale && (currentImgPath == "<GENERATE>" || currentImgPath == "")) {
-            popCost.Value .= " (ERR: IMG REQ)"
-            popCost.SetFont("cRed")
-        } else if (!isUpscale && InStr(agent, "Imagen") && (currentImgPath != "<GENERATE>" && currentImgPath != "")) {
+        if (InStr(agent, "Imagen") && (currentImgPath != "<GENERATE>" && currentImgPath != "")) {
             popCost.Value .= " (ERR: GEN ONLY)"
             popCost.SetFont("cRed")
         } else {
@@ -501,8 +486,6 @@ ShowTaskForm(*) {
         }
     }
     tier.OnEvent("Change", UpdatePopCost)
-    radNormal.OnEvent("Click", UpdatePopCost)
-    radUpscale.OnEvent("Click", UpdatePopCost)
     UpdatePopCost() ; Initialize
 
     btn := g.Add("Button", "Default xm w300 h40", isEdit ? "Update Task" : "Confirm Task")
@@ -535,23 +518,11 @@ ProcessMergedSelection(Prompt, FullTierName, EntryGui) {
 }
 
 SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
-    global GCP_PROJECT, GCP_TOKEN
-    agentName := ""
-    agentSize := ""
-
-    if (Data.TaskType == 2) { ; Upscale
-        agentName := "Upscale"
-        agentSize := "x2"
-        if (GCP_PROJECT == "YOUR_PROJECT_ID" || GCP_TOKEN == "") {
-             MsgBox "Warning: GCP_PROJECT or GCP_TOKEN is not set. Upscale tasks will likely fail."
-        }
-    } else {
-        ; // Extract Agent and Size from the Tier string (e.g., "Nano Pro 4K")
-        match := ""
-        RegExMatch(Data.Tier, "(.*)\s(\d+K)", &match)
-        agentName := (match) ? match[1] : "Unknown"
-        agentSize := (match) ? match[2] : "1K"
-    }
+    ; // Extract Agent and Size from the Tier string (e.g., "Nano Pro 4K")
+    match := ""
+    RegExMatch(Data.Tier, "(.*)\s(\d+K)", &match)
+    agentName := (match) ? match[1] : "Unknown"
+    agentSize := (match) ? match[2] : "1K"
 
     ; // 1. Collect paths and IDs for the task
     imgID := taskID
@@ -631,9 +602,13 @@ SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
 
 UpdateTotalDisplay() {
     global TotalBatchCost := 0.0
-    for path, tasks in ImageTaskMap {
-        for t in tasks {
-            TotalBatchCost += t.Cost
+    if (Radio_Upscale.Value) {
+        TotalBatchCost := LV_Images.GetCount() * 0.003
+    } else {
+        for path, tasks in ImageTaskMap {
+            for t in tasks {
+                TotalBatchCost += t.Cost
+            }
         }
     }
     TotalCostDisplay.Value := "Total: $" . Format("{:.4f}", TotalBatchCost)
@@ -794,6 +769,7 @@ AddNullImage(*) {
     }
     LV_Images.Modify(LV_Images.GetCount(), "Select Focus")
     ImageListClick(LV_Images, LV_Images.GetCount())
+    UpdateTotalDisplay()
     UpdateButtonStates()
 }
 
@@ -815,6 +791,7 @@ Gui_DropFiles(GuiObj, GuiCtrlObj, FileArray, X, Y) {
         ImageListClick(LV_Images, 1)        ; Trigger the preview and task list logic
     }
     LV_Images.ModifyCol()
+    UpdateTotalDisplay()
     UpdateButtonStates()
 }
 
@@ -897,7 +874,27 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
-    global MODEL1, MODEL2, MODEL3, MODEL4, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
+    global MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, ImageTaskMap, Radio_Batch, Radio_Upscale, LV_Tasks, ModelLog, Prog_Bar, DEBUG, GCP_PROJECT, GCP_TOKEN
+
+    if (Radio_Upscale.Value) {
+        if (LV_Images.GetCount() == 0) {
+            MsgBox "No images to upscale!"
+            return
+        }
+        if (GCP_PROJECT == "YOUR_PROJECT_ID" || GCP_TOKEN == "") {
+             MsgBox "Warning: GCP_PROJECT or GCP_TOKEN is not set. Upscale will likely fail."
+        }
+
+        ToggleUI(false)
+        ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Starting Upscale Queue..."
+        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+        global IsBatchRunning := true
+        global CurrentBatchIndex := 0
+        Prog_Bar.Value := 0
+        SetTimer ProcessUpscaleTask, 500
+        return
+    }
+
     firstAgent := ""
     isMixed := false
     selectedBatchModel := ""
@@ -1026,6 +1023,43 @@ ProcessNextTask() {
             MsgBox("Task mapping error: " e.Message)
         }
     }
+}
+
+ProcessUpscaleTask() {
+    global useCurl, PendingTasks
+    global CurrentBatchIndex
+    TotalImages := LV_Images.GetCount()
+
+    if (CurrentBatchIndex >= TotalImages) {
+        SetTimer(ProcessUpscaleTask, 0)
+        if (!useCurl || PendingTasks == 0)
+            ToggleUI(true)
+        return
+    }
+
+    CurrentBatchIndex++
+
+    imgID := LV_Images.GetText(CurrentBatchIndex, 1)
+    fullPath := LV_Images.GetText(CurrentBatchIndex, 5)
+
+    if (fullPath == "" || fullPath == "<GENERATE>") {
+        ModelLogMsg("Skipping image " . CurrentBatchIndex . " (Invalid path for upscale)")
+        SetTimer(ProcessUpscaleTask, -10) ; Move to next immediately
+        return
+    }
+
+    ; Create a dummy task object for upscale
+    taskObj := {
+        ID: imgID,
+        Agent: "Upscale",
+        Size: "x2",
+        Format: "JPG",
+        Prompt: "",
+        NegativePrompt: "",
+        Ratio: "1:1" ; Not used for upscale but prevents errors
+    }
+
+    RunGeminiTask(fullPath, taskObj, 0) ; batchIdx 0 means we don't update LV_Tasks
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
@@ -1161,7 +1195,8 @@ if (whr.Status == 200) {
         ; Log the successful save location
         ModelLog.Value .= "`nSaved: " . outPath
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
-        LV_Tasks.Modify(batchIdx, "", , , , , "Success")
+        if (batchIdx > 0)
+            LV_Tasks.Modify(batchIdx, "", , , , , "Success")
     } else {
         if RegExMatch(responseText, 'i)"message":\s*"([^"]+)"', &m) {
             ModelLog.Value .= "`n[ERROR]: Task " . batchIdx . " - " . m[1]
@@ -1170,7 +1205,8 @@ if (whr.Status == 200) {
         } else {
             ModelLog.Value .= "`n[FAILED]: Task " . batchIdx . " - No image data returned."
         }
-        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+        if (batchIdx > 0)
+            LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
     }
 }
@@ -1178,7 +1214,8 @@ if (whr.Status == 200) {
         if (DEBUG)
             ;FileAppend("`n[" . FormatTime() . "] CRITICAL SCRIPT ERROR: " . e.Message . "`n", "debug.log")
             LogMessage("`n[" . FormatTime() . "] CRITICAL SCRIPT ERROR: " . e.Message . "`n")
-        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+        if (batchIdx > 0)
+            LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
         ModelLog.Value .= "`nERROR: " . e.Message
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
     }
@@ -1761,18 +1798,30 @@ TestAPIConnection(*) {
 }
 
 UpdateButtonStates() {
-    ; "Add Task" needs an image selected
-    Btn_Add.Enabled := (CurrentPath != "") ;
+    isUpscale := Radio_Upscale.Value
 
-    ; "Run Batch" needs at least one task in the entire map
-    HasAnyTasks := false
-    for path, tasks in ImageTaskMap { ;
-        if (tasks.Length > 0) {
-            HasAnyTasks := true
-            break
+    ; "Add Task" needs an image selected AND not in upscale mode
+    Btn_Add.Enabled := (CurrentPath != "") && !isUpscale
+
+    ; "Generate" should also be disabled in upscale mode
+    Btn_Gen.Enabled := !isUpscale
+
+    ; Grey out tasks list in upscale mode
+    LV_Tasks.Enabled := !isUpscale
+
+    ; "Run" needs tasks if in normal mode, or images if in upscale mode
+    if (isUpscale) {
+        Btn_Run.Enabled := (LV_Images.GetCount() > 0)
+    } else {
+        HasAnyTasks := false
+        for path, tasks in ImageTaskMap {
+            if (tasks.Length > 0) {
+                HasAnyTasks := true
+                break
+            }
         }
+        Btn_Run.Enabled := HasAnyTasks
     }
-    Btn_Run.Enabled := HasAnyTasks ;
 }
 
 GetClosestRatio(w, h) {
@@ -1873,6 +1922,7 @@ $Del:: {
             }
 
             RefreshTaskTable()
+            UpdateTotalDisplay()
 
             if (LV_Images.GetCount() > 0) {
                 NewRow := (Row > LV_Images.GetCount()) ? LV_Images.GetCount() : Row
@@ -2047,16 +2097,19 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
                             if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", buf, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
                                 FileOpen(outPath, "w").RawWrite(buf)
                                 ModelLogMsg("Image saved: " . outPath)
-                                LV_Tasks.Modify(batchIdx, "", , , , , "Success")
+                                if (batchIdx > 0)
+                                    LV_Tasks.Modify(batchIdx, "", , , , , "Success")
                             }
                         }
                     } catch as e {
                         ModelLogMsg("Error decoding image: " . e.Message)
-                        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+                        if (batchIdx > 0)
+                            LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                     }
                 } else {
                     ModelLogMsg("Could not find complete image data in curl response.")
-                    LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+                    if (batchIdx > 0)
+                        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                 }
             } else {
                 if (RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m)) {
@@ -2064,11 +2117,13 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
                 } else {
                     ModelLogMsg("Curl task " . batchIdx . " returned no image data. See debug.log.")
                 }
-                LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+                if (batchIdx > 0)
+                    LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
             }
         } else {
             ModelLogMsg("Curl task " . batchIdx . " finished with no output.")
-            LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+            if (batchIdx > 0)
+                LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
         }
     } catch as e {
         ModelLogMsg("Critical error in ProcessCurlResult: " . e.Message)
