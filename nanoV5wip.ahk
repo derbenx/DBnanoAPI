@@ -7,6 +7,9 @@
 ; --- CONFIG ---
 global API_KEY := "USE YER OWN" ; log in to https://aistudio.google.com/ create new project, then create an API key.
 global hurl := "https://generativelanguage.googleapis.com/v1beta/models/"
+global GCP_PROJECT := "YOUR_PROJECT_ID"
+global GCP_REGION := "us-central1"
+global GCP_TOKEN := "" ; Get via: gcloud auth print-access-token
 global OutputDir := A_ScriptDir "\img"
 global MODEL1 := "gemini-2.5-flash-image"
 global MODEL2 := "gemini-3-pro-image-preview"
@@ -311,7 +314,7 @@ LoadExistingJobs() {
 
 
 CalculateCost(agent, res) {
-    base := (agent = "Nano Flash") ? 0.039 : (res = "4K") ? 0.24 : 0.134
+    base := (InStr(agent, "Imagen")) ? 0.04 : (agent = "Nano Flash") ? 0.039 : (res = "4K") ? 0.24 : 0.134
     ; Apply 50% discount if Batch Mode is selected
     return Radio_Batch.Value ? (base * 0.5) : base
 }
@@ -469,7 +472,10 @@ ProcessMergedSelection(Prompt, FullTierName, EntryGui) {
 
 SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
     ; // Extract Agent and Size from the Tier string (e.g., "Nano Pro 4K")
+    match := ""
     RegExMatch(Data.Tier, "(.*)\s(\d+K)", &match)
+    agentName := (match) ? match[1] : "Unknown"
+    agentSize := (match) ? match[2] : "1K"
 
     ; // 1. Collect paths and IDs for the task
     imgID := taskID
@@ -497,13 +503,18 @@ SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
     if (imgID == "")
         return
 
+    if (InStr(agentName, "Imagen") && InStr(fullPaths, "|")) {
+        MsgBox "Imagen does not support multiple reference images. Please select only one image."
+        return
+    }
+
     ; // 2. Create the task object
     newTask := {
         ID: imgID,
         Prompt: Data.Prompt,
         NegativePrompt: Data.Neg,
-        Agent: match[1],
-        Size: match[2],
+        Agent: agentName,
+        Size: agentSize,
         Ratio: Data.Ratio,
         Format: Data.Format,
         Status: "Pending",
@@ -835,6 +846,11 @@ StartBatch(*) {
             result := MsgBox("Warning: Your batch contains a mix of models (Flash, Pro, or Imagen).`n`nGoogle Batch API requires all tasks in a single job to use the SAME model.")
             return
         }
+
+        if (InStr(firstAgent, "Imagen")) {
+            MsgBox("Imagen does not currently support Batch Mode in this application. Please use Immediate mode.")
+            return
+        }
     }
     ; --- END OF CHECK ---
 
@@ -971,13 +987,20 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         ; FileDelete(payloadFile) ; User commented out FileDeletes
         FileAppend(payload, payloadFile, "UTF-8-RAW")
 
-        apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
+        authHeader := ""
+        if InStr(agent, "Imagen") {
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
+            if (GCP_TOKEN != "")
+                authHeader := ' -H "Authorization: Bearer ' . GCP_TOKEN . '"'
+        } else {
+            apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
+        }
 
         LogMessage("Task " . batchIdx . " API URL: " . apiUrl)
         LogMessage("Task " . batchIdx . " Payload: " . payload)
 
         curlLogFile := A_ScriptDir . "\gemini_curl_err_" . A_TickCount . "_" . batchIdx . ".log"
-        curlCmd := 'curl -s -S -N -X POST "' . apiUrl . '" -H "Content-Type: application/json" -d "@' . payloadFile . '" -o "' . responseFile . '" 2> "' . curlLogFile . '"'
+        curlCmd := 'curl -s -S -N -X POST "' . apiUrl . '" -H "Content-Type: application/json"' . authHeader . ' -d "@' . payloadFile . '" -o "' . responseFile . '" 2> "' . curlLogFile . '"'
         LogMessage("Task " . batchIdx . " Curl Command: " . curlCmd)
         Run(curlCmd, , "Hide", &pid)
         global PendingTasks += 1
@@ -1005,10 +1028,18 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         whr := ComObject("WinHttp.WinHttpRequest.5.1")
         ;SetTimeouts(resolve, connect, send, receive) in milliseconds
         whr.SetTimeouts(30000, 60000, 600000, 600000)
-        apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
+
+        if InStr(agent, "Imagen") {
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
+        } else {
+            apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
+        }
 
         whr.Open("POST", apiUrl, false)
         whr.SetRequestHeader("Content-Type", "application/json")
+        if (InStr(agent, "Imagen") && GCP_TOKEN != "")
+            whr.SetRequestHeader("Authorization", "Bearer " . GCP_TOKEN)
+
         whr.Send(payload)
 
         ; --- DEBUG: LOG WHAT IS RECEIVED ---
@@ -1030,8 +1061,8 @@ if (whr.Status == 200) {
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; Scroll to bottom
     }
 
-    if RegExMatch(responseText, 's)"data":\s*"([^"]+)"', &imgMatch) {
-        binData := Base64ToBin(imgMatch[1])
+    if RegExMatch(responseText, 's)"(data|bytesBase64Encoded)":\s*"([^"]+)"', &imgMatch) {
+        binData := Base64ToBin(imgMatch[2])
         finalExt := (InStr(responseText, "image/png")) ? "png" : "jpg"
         outPath := OutputDir "\" nameNoExt "_" A_Now "." finalExt
 
@@ -1092,6 +1123,29 @@ FileToBase64(FilePath) {
 
 CreateJsonPayload(taskObj, taskImagePath) {
     global encourageGen, encourageEdt, DEBUG
+
+    isImagen := InStr(taskObj.Agent, "Imagen")
+
+    if (isImagen) {
+        promptText := "USER DIRECTIVE: " . taskObj.Prompt . ". Aspect Ratio: " . taskObj.Ratio . ". Avoid: " . taskObj.NegativePrompt
+        imagePart := ""
+        if (taskImagePath != "<GENERATE>" && taskImagePath != "") {
+             b64 := FileToBase64(taskImagePath)
+             mime := (taskObj.Format = "PNG") ? "image/png" : "image/jpeg"
+             imagePart := ', "image": {"bytesBase64Encoded": "' . b64 . '", "mimeType": "' . mime . '"}'
+        }
+
+        payload := '{'
+            . '"instances": [{"prompt": "' . StrReplace(StrReplace(promptText, '"', '\"'), "`n", " ") . '"' . imagePart . '}], '
+            . '"parameters": {'
+                . '"sampleCount": 1, '
+                . '"aspectRatio": "' . taskObj.Ratio . '"'
+                . (taskObj.NegativePrompt != "" ? ', "negativePrompt": "' . StrReplace(StrReplace(taskObj.NegativePrompt, '"', '\"'), "`n", " ") . '"' : "")
+                . (taskObj.Size != "1K" ? ', "sampleImageSize": "' . taskObj.Size . '"' : "")
+            . '}'
+        . '}'
+        return payload
+    }
 
     enc := ""
     fullPrompt := ""
@@ -1858,8 +1912,12 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
         if (responseText != "") {
             ; Use InStr/SubStr for robust extraction from potentially huge JSON strings
             p1 := InStr(responseText, '"data":')
+            if (!p1)
+                p1 := InStr(responseText, '"bytesBase64Encoded":')
+
             if (p1) {
-                p2 := InStr(responseText, '"', , p1 + 7)
+                pStart := (InStr(SubStr(responseText, p1), ":") + p1)
+                p2 := InStr(responseText, '"', , pStart)
                 p3 := InStr(responseText, '"', , p2 + 1)
                 if (p2 && p3) {
                     base64Data := SubStr(responseText, p2 + 1, p3 - p2 - 1)
