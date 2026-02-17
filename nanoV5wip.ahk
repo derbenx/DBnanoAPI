@@ -1,17 +1,19 @@
+; paste in browser: data:image/png;base64,{base64imgdata}
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
 ; --- CONFIG ---
-global API_KEY := "USE YER OWN" ; log in to https://aistudio.google.com/ create new project, then create an API key.
+;global API_KEY := "USE YER OWN" ; log in to https://aistudio.google.com/ create new project, then create an API key.
+global API_KEY := EnvGet("API_KEY")
 global hurl := "https://generativelanguage.googleapis.com/v1beta/models/"
-global GCP_PROJECT := "YOUR_PROJECT_ID"
+global GCP_PROJECT := "PROJECT_ID"
 global GCP_REGION := "us-central1"
-global GCP_TOKEN := "" ; Get via: gcloud auth print-access-token
 global OutputDir := A_ScriptDir "\img"
 global MODEL1 := "gemini-2.5-flash-image" ; 1k
 global MODEL2 := "gemini-3-pro-image-preview" ; 1k 2k 4k
 global MODEL3 := "imagen-4.0-generate-001" ; 2k
 global MODEL4 := "imagen-4.0-ultra-generate-001" ; 2k
+global MODEL5 := "imagen-4.0-upscale-preview"
 global encourageEdt := "You are a professional image-restoration engine. Your goal is to apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear, and perfectly aligned with the reference. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage."
 global encourageGen := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
 global proVal := "everyone stands on top of a large pile of burgers. the burgers deform under load."
@@ -73,6 +75,8 @@ Radio_Immediate := MyGui.Add("Radio", "x+10 yp Checked", "Immediate")
 Radio_Immediate.OnEvent("Click", RefreshAllCosts) ; Add this trigger
 Radio_Batch := MyGui.Add("Radio", "x+20", "Batch")
 Radio_Batch.OnEvent("Click", RefreshAllCosts) ; Add this trigger
+Radio_Upscale := MyGui.Add("Radio", "x+20", "Upscale")
+Radio_Upscale.OnEvent("Click", RefreshAllCosts) ; Add this trigger
 
 Btn_load := MyGui.Add("Button", "x30 yp+40 w100 h30", "Load CSV")
 Btn_load.OnEvent("Click", LoadCSV)
@@ -111,6 +115,8 @@ if (useCurl) {
 } else {
  ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Using standard mode. The GUI will freeze when doing HTTPS."
 }
+
+;ModelLogMsg("API_KEY: " . API_KEY)
 
 SaveCSV(*) {
     savePath := FileSelect("S16", A_ScriptDir, "Save Task Configuration", "CSV (*.csv)")
@@ -257,7 +263,11 @@ UpdatePreview(ImgPath) {
 }
 
 RefreshAllCosts(*) {
-    Btn_Run.Text := Radio_Batch.Value ? "RUN BATCH" : "RUN IMMEDIATE"
+    if (Radio_Upscale.Value)
+        Btn_Run.Text := "RUN UPSCALE"
+    else
+        Btn_Run.Text := Radio_Batch.Value ? "RUN BATCH" : "RUN IMMEDIATE"
+
     ; Loop through every image path in your map
     for path, tasks in ImageTaskMap {
         ; Loop through every task for that image
@@ -273,6 +283,7 @@ RefreshAllCosts(*) {
     UpdateTotalDisplay()
     ; Update the ListView rows to show the new prices
     RefreshTaskTable()
+    UpdateButtonStates()
 }
 
 LoadExistingJobs() {
@@ -307,6 +318,9 @@ LoadExistingJobs() {
 }
 
 CalculateCost(agent, res := "1K") {
+ if (agent == "Upscale")
+    return 0.003
+
  full := agent . " " . res
  base := 0.134 ; pro 1K & pro 2k
  nano := 1
@@ -555,7 +569,7 @@ SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
         Format: Data.Format,
         Status: "Pending",
         SourcePath: fullPaths,
-        Cost: CalculateCost(match[1], match[2])
+        Cost: CalculateCost(agentName, agentSize)
     }
 
     ; // 3. Store in the Map using the Task ID (could be "1" or "1+2")
@@ -591,9 +605,13 @@ SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
 
 UpdateTotalDisplay() {
     global TotalBatchCost := 0.0
-    for path, tasks in ImageTaskMap {
-        for t in tasks {
-            TotalBatchCost += t.Cost
+    if (Radio_Upscale.Value) {
+        TotalBatchCost := LV_Images.GetCount() * 0.003
+    } else {
+        for path, tasks in ImageTaskMap {
+            for t in tasks {
+                TotalBatchCost += t.Cost
+            }
         }
     }
     TotalCostDisplay.Value := "Total: $" . Format("{:.4f}", TotalBatchCost)
@@ -754,6 +772,7 @@ AddNullImage(*) {
     }
     LV_Images.Modify(LV_Images.GetCount(), "Select Focus")
     ImageListClick(LV_Images, LV_Images.GetCount())
+    UpdateTotalDisplay()
     UpdateButtonStates()
 }
 
@@ -775,6 +794,7 @@ Gui_DropFiles(GuiObj, GuiCtrlObj, FileArray, X, Y) {
         ImageListClick(LV_Images, 1)        ; Trigger the preview and task list logic
     }
     LV_Images.ModifyCol()
+    UpdateTotalDisplay()
     UpdateButtonStates()
 }
 
@@ -857,7 +877,27 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
-    global MODEL1, MODEL2, MODEL3, MODEL4, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
+    global MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, ImageTaskMap, Radio_Batch, Radio_Upscale, LV_Tasks, ModelLog, Prog_Bar, DEBUG, GCP_PROJECT 
+
+    if (Radio_Upscale.Value) {
+        if (LV_Images.GetCount() == 0) {
+            MsgBox "No images to upscale!"
+            return
+        }
+        if (GCP_PROJECT == "YOUR_PROJECT_ID" || API_KEY == "USE YER OWN") {
+             ;MsgBox "Warning: GCP_PROJECT or API_KEY is not set. Upscale will likely fail."
+        }
+
+        ToggleUI(false)
+        ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Starting Upscale Queue..."
+        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+        global IsBatchRunning := true
+        global CurrentBatchIndex := 0
+        Prog_Bar.Value := 0
+        SetTimer ProcessUpscaleTask, -500
+        return
+    }
+
     firstAgent := ""
     isMixed := false
     selectedBatchModel := ""
@@ -944,10 +984,15 @@ SetLoadingState(active) {
 ProcessNextTask() {
     global useCurl, PendingTasks
     global CurrentBatchIndex, ImageTaskMap
+
+    if (PendingTasks > 0)
+        return ; Wait for previous task to finish (Rate Limit Safety)
+
     TotalTasks := LV_Tasks.GetCount()
 
     if (CurrentBatchIndex >= TotalTasks) {
         SetTimer(ProcessNextTask, 0) ; // Stop the timer
+        global IsBatchRunning := false
         if (!useCurl || PendingTasks == 0)
             ToggleUI(true)               ; // Re-enable buttons
         return
@@ -988,8 +1033,53 @@ ProcessNextTask() {
     }
 }
 
+ProcessUpscaleTask() {
+    global useCurl, PendingTasks, CurrentBatchIndex, IsBatchRunning, Prog_Bar
+
+    if (PendingTasks > 0) {
+        SetTimer(ProcessUpscaleTask, -1000) ; check again soon
+        return
+    }
+
+    TotalImages := LV_Images.GetCount()
+
+    if (CurrentBatchIndex >= TotalImages) {
+        IsBatchRunning := false
+        Prog_Bar.Value := 100
+        if (!useCurl || PendingTasks == 0)
+            ToggleUI(true)
+        return
+    }
+
+    CurrentBatchIndex++
+    Prog_Bar.Value := (CurrentBatchIndex / TotalImages) * 100
+
+    imgID := LV_Images.GetText(CurrentBatchIndex, 1)
+    fullPath := LV_Images.GetText(CurrentBatchIndex, 5)
+
+    if (fullPath == "" || fullPath == "<GENERATE>") {
+        ModelLogMsg("Skipping image " . CurrentBatchIndex . " (Invalid path for upscale)")
+        SetTimer(ProcessUpscaleTask, -10) ; Move to next immediately
+        return
+    }
+
+    ; Create a dummy task object for upscale
+    taskObj := {
+        ID: imgID,
+        Agent: "Upscale",
+        Size: "x2",
+        Format: "JPG",
+        Prompt: "",
+        NegativePrompt: "",
+        Ratio: "1:1" ; Not used for upscale but prevents errors
+    }
+
+    RunGeminiTask(fullPath, taskObj, -CurrentBatchIndex) ; Negative index for upscale logging
+    SetTimer(ProcessUpscaleTask, -5000) ; Re-arm one-shot
+}
+
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, GCP_REGION, GCP_PROJECT, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
 
     MODEL_ID := ""
     payload := ""
@@ -1021,6 +1111,8 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
             MODEL_ID := MODEL4
         else
             MODEL_ID := MODEL3
+    } else if (agent == "Upscale") {
+        MODEL_ID := MODEL5
     } else
         MODEL_ID := MODEL2
     if (useCurl) {
@@ -1032,23 +1124,26 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         FileAppend(payload, payloadFile, "UTF-8-RAW")
 
         authHeader := ""
-        if InStr(agent, "Imagen") {
+        if (agent == "Upscale") {
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict?key=" . API_KEY
+        } else if InStr(agent, "Imagen") {
             apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
         } else {
             apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
         }
 
-        LogMessage("Task " . batchIdx . " API URL: " . apiUrl)
-        LogMessage("Task " . batchIdx . " Payload: " . payload)
+        idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
+        LogMessage(idxLog . " API URL: " . apiUrl)
+        LogMessage(idxLog . " Payload: " . payload)
 
         curlLogFile := A_ScriptDir . "\gemini_curl_err_" . A_TickCount . "_" . batchIdx . ".log"
         curlCmd := 'curl -s -S -N -X POST "' . apiUrl . '" -H "Content-Type: application/json"' . authHeader . ' -d "@' . payloadFile . '" -o "' . responseFile . '" 2> "' . curlLogFile . '"'
-        LogMessage("Task " . batchIdx . " Curl Command: " . curlCmd)
+        LogMessage(idxLog . " Curl Command: " . curlCmd)
         Run(curlCmd, , "Hide", &pid)
         global PendingTasks += 1
         CurlTimers[pid] := CheckCurlProgress.Bind(pid, responseFile, payloadFile, batchIdx, nameNoExt)
         SetTimer(CurlTimers[pid], 200)
-        ModelLog.Value .= "`n[curl] Task " . batchIdx . " started (PID: " . pid . ")"
+        ModelLog.Value .= "`n[curl] " . idxLog . " started (PID: " . pid . ")"
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
         return
     }
@@ -1064,20 +1159,25 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
             ;FileAppend("`n[" . timestamp . "] --- SENDING TO API ---`n" . payload . "`n", "debug.log")
             LogMessage("`n[" . timestamp . "] --- SENDING TO API ---`n" . payload . "`n")
         }
-        ModelLog.Value .= "`nInfo: " . MODEL_ID . " " . taskObj.Ratio . " " . taskObj.Size . " " . nameNoExt
+        idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
+        ModelLog.Value .= "`nInfo [" . idxLog . "]: " . MODEL_ID . " " . taskObj.Ratio . " " . taskObj.Size . " " . nameNoExt
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
 
         whr := ComObject("WinHttp.WinHttpRequest.5.1")
         ;SetTimeouts(resolve, connect, send, receive) in milliseconds
         whr.SetTimeouts(30000, 60000, 600000, 600000)
 
-        if InStr(agent, "Imagen") {
-            apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
+        if (agent == "Upscale") {
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict?key=" . API_KEY
+            whr.Open("POST", apiUrl, false)
         } else {
-            apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
+            if InStr(agent, "Imagen") {
+                apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
+            } else {
+                apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
+            }
+            whr.Open("POST", apiUrl, false)
         }
-
-        whr.Open("POST", apiUrl, false)
         whr.SetRequestHeader("Content-Type", "application/json")
 
         whr.Send(payload)
@@ -1111,19 +1211,28 @@ if (whr.Status == 200) {
         ; Log the successful save location
         ModelLog.Value .= "`nSaved: " . outPath
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
-        LV_Tasks.Modify(batchIdx, "", , , , , "Success")
+        if (batchIdx > 0)
+            LV_Tasks.Modify(batchIdx, "", , , , , "Success")
     } else {
-        if (InStr(responseText, '"finishReason"')) {
-            reason := JSON_Get(responseText, "candidates[1].finishReason")
-            ModelLog.Value .= "`n[DROPPED]: Task " . batchIdx . " failed. Reason: " . reason
+        idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
+        if RegExMatch(responseText, 'i)"message":\s*"([^"]+)"', &m) {
+            ModelLog.Value .= "`n[ERROR]: " . idxLog . " - " . m[1]
+        } else if RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m) {
+            ModelLog.Value .= "`n[SAFETY]: " . idxLog . " - Reason: " . m[1]
+        } else {
+            ModelLog.Value .= "`n[FAILED]: " . idxLog . " - No image data returned."
         }
+        if (batchIdx > 0)
+            LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
     }
 }
     } catch Error as e {
         if (DEBUG)
             ;FileAppend("`n[" . FormatTime() . "] CRITICAL SCRIPT ERROR: " . e.Message . "`n", "debug.log")
             LogMessage("`n[" . FormatTime() . "] CRITICAL SCRIPT ERROR: " . e.Message . "`n")
-        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+        if (batchIdx > 0)
+            LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
         ModelLog.Value .= "`nERROR: " . e.Message
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
     }
@@ -1163,6 +1272,23 @@ FileToBase64(FilePath) {
 
 CreateJsonPayload(taskObj, taskImagePath) {
     global encourageGen, encourageEdt, DEBUG
+
+    if (taskObj.Agent == "Upscale") {
+        mime := (taskObj.Format == "PNG") ? "image/png" : "image/jpeg"
+        b64 := FileToBase64(taskImagePath)
+        payload := '{'
+            . '"instances": [{'
+                . '"image": {'
+                    . '"bytesBase64Encoded": "' . b64 . '"'
+                . '}'
+            . '}], '
+            . '"parameters": {'
+                . '"upscaleFactor": "x2", '
+                . '"outputMimeType": "' . mime . '"'
+            . '}'
+        . '}'
+        return payload
+    }
 
     isImagen := InStr(taskObj.Agent, "Imagen")
 
@@ -1689,18 +1815,30 @@ TestAPIConnection(*) {
 }
 
 UpdateButtonStates() {
-    ; "Add Task" needs an image selected
-    Btn_Add.Enabled := (CurrentPath != "") ;
+    isUpscale := Radio_Upscale.Value
 
-    ; "Run Batch" needs at least one task in the entire map
-    HasAnyTasks := false
-    for path, tasks in ImageTaskMap { ;
-        if (tasks.Length > 0) {
-            HasAnyTasks := true
-            break
+    ; "Add Task" needs an image selected AND not in upscale mode
+    Btn_Add.Enabled := (CurrentPath != "") && !isUpscale
+
+    ; "Generate" should also be disabled in upscale mode
+    Btn_Gen.Enabled := !isUpscale
+
+    ; Grey out tasks list in upscale mode
+    LV_Tasks.Enabled := !isUpscale
+
+    ; "Run" needs tasks if in normal mode, or images if in upscale mode
+    if (isUpscale) {
+        Btn_Run.Enabled := (LV_Images.GetCount() > 0)
+    } else {
+        HasAnyTasks := false
+        for path, tasks in ImageTaskMap {
+            if (tasks.Length > 0) {
+                HasAnyTasks := true
+                break
+            }
         }
+        Btn_Run.Enabled := HasAnyTasks
     }
-    Btn_Run.Enabled := HasAnyTasks ;
 }
 
 GetClosestRatio(w, h) {
@@ -1801,6 +1939,7 @@ $Del:: {
             }
 
             RefreshTaskTable()
+            UpdateTotalDisplay()
 
             if (LV_Images.GetCount() > 0) {
                 NewRow := (Row > LV_Images.GetCount()) ? LV_Images.GetCount() : Row
@@ -1894,10 +2033,15 @@ CheckCurlProgress(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
     if FileExist(responseFile) {
         try {
             fileContent := FileRead(responseFile)
-            ; "Drop the stream": Wait until the "data" field is closed by a quote
+            ; "Drop the stream": Wait until the image data field is closed by a quote
             ; Use InStr for performance on large stream files
-            if (p1 := InStr(fileContent, '"data":')) {
-                if (p2 := InStr(fileContent, '"', , p1 + 7)) {
+            p1 := InStr(fileContent, '"data":')
+            if (!p1)
+                p1 := InStr(fileContent, '"bytesBase64Encoded":')
+
+            if (p1) {
+                pStart := InStr(fileContent, ":", , p1)
+                if (pStart && p2 := InStr(fileContent, '"', , pStart)) {
                     if (p3 := InStr(fileContent, '"', , p2 + 1)) {
                         ProcessClose(pid)
                         ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt)
@@ -1923,14 +2067,15 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
             ; FileDelete(responseFile)
         }
 
-        LogMessage("Task " . batchIdx . " Response: " . responseText)
+        idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
+        LogMessage(idxLog . " Response: " . responseText)
 
         ; Try to find curl error log if response is empty
         if (responseText == "") {
             Loop Files, A_ScriptDir . "\gemini_curl_err_*.log" {
                 if InStr(A_LoopFileName, "_" . batchIdx . ".log") {
                     errText := FileRead(A_LoopFileFullPath)
-                    LogMessage("Task " . batchIdx . " Curl Error: " . errText)
+                    LogMessage(idxLog . " Curl Error: " . errText)
                     ; FileDelete(A_LoopFileFullPath)
                     break
                 }
@@ -1970,16 +2115,19 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
                             if DllCall("crypt32\CryptStringToBinary", "Str", base64Data, "UInt", 0, "UInt", 1, "Ptr", buf, "UInt*", &size, "Ptr", 0, "Ptr", 0) {
                                 FileOpen(outPath, "w").RawWrite(buf)
                                 ModelLogMsg("Image saved: " . outPath)
-                                LV_Tasks.Modify(batchIdx, "", , , , , "Success")
+                                if (batchIdx > 0)
+                                    LV_Tasks.Modify(batchIdx, "", , , , , "Success")
                             }
                         }
                     } catch as e {
                         ModelLogMsg("Error decoding image: " . e.Message)
-                        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+                        if (batchIdx > 0)
+                            LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                     }
                 } else {
                     ModelLogMsg("Could not find complete image data in curl response.")
-                    LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+                    if (batchIdx > 0)
+                        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                 }
             } else {
                 if (RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m)) {
@@ -1987,11 +2135,13 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
                 } else {
                     ModelLogMsg("Curl task " . batchIdx . " returned no image data. See debug.log.")
                 }
-                LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+                if (batchIdx > 0)
+                    LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
             }
         } else {
             ModelLogMsg("Curl task " . batchIdx . " finished with no output.")
-            LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+            if (batchIdx > 0)
+                LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
         }
     } catch as e {
         ModelLogMsg("Critical error in ProcessCurlResult: " . e.Message)
