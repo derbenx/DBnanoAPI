@@ -11,8 +11,8 @@ global OutputDir := A_ScriptDir "\img"
 global MODEL1 := "gemini-2.5-flash-image"
 global MODEL2 := "gemini-3-pro-image-preview"
 global MODEL3 := "imagen-4.0-generate-001"
-global encourageGen := "You are a professional image-restoration engine. Your goal is to apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear, and perfectly aligned with the reference. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage."
-global encourageImg := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
+global encourageEdt := "You are a professional image-restoration engine. Your goal is to apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear, and perfectly aligned with the reference. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage."
+global encourageGen := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
 global proVal := "everyone stands on top of a large pile of burgers. the burgers deform under load."
 global negVal := "distorted faces, blurry, distorted, low quality, text, watermarks, missing or extra limbs, deformities, floating people or objects"  ; do not make
 global DEBUG := 1
@@ -923,7 +923,7 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, hurl, encourageGen, encourgeImg, useCurl, PendingTasks, CurlTimers
+    global API_KEY, MODEL1, MODEL2, hurl, encourage, encourge, useCurl, PendingTasks, CurlTimers
 
     ; // Extract variables from the task object
     agent := taskObj.Agent
