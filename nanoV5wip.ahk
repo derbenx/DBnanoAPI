@@ -2,18 +2,17 @@
 #SingleInstance Force
 
 ;Todo
-; error handling and output to modellog
-; duplicate task Button
+
 
 ; --- CONFIG ---
 global API_KEY := "USE YER OWN" ; log in to https://aistudio.google.com/ create new project, then create an API key.
 global hurl := "https://generativelanguage.googleapis.com/v1beta/models/"
 global OutputDir := A_ScriptDir "\img"
 global MODEL1 := "gemini-2.5-flash-image"
-global MODEL2 := "gemini-3-pro-image-preview" ;nano-banana-pro-preview
-;global encourage := "You are a precision image-restoration and manipulation engine. Your goal is to apply the 'USER DIRECTIVE' while maintaining strict structural integrity of the original image. Enhance all human features for anatomical accuracy—ensure eyes are sharp and faces are clear. Maximize texture detail and resolve any blur or noise into crisp, 8k-resolution surfaces. If the directive is vague, apply professional aesthetic enhancements by default. Maintain 100% adherence to the facial structure of the subject in the reference image. Treat the subject as an unknown individual."
-global encourage := "You are a professional image-restoration engine. Your goal is to apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear, and perfectly aligned with the reference. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage."
-;global encourageImg := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
+global MODEL2 := "gemini-3-pro-image-preview"
+global MODEL3 := "imagen-4.0-generate-001"
+global encourageGen := "You are a professional image-restoration engine. Your goal is to apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear, and perfectly aligned with the reference. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage."
+global encourageImg := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
 global proVal := "everyone stands on top of a large pile of burgers. the burgers deform under load."
 global negVal := "distorted faces, blurry, distorted, low quality, text, watermarks, missing or extra limbs, deformities, floating people or objects"  ; do not make
 global DEBUG := 1
@@ -398,7 +397,7 @@ ShowTaskForm(*) {
             nVal := task.NegativePrompt
 
             tierStr := task.Agent . " " . task.Size
-            for i, val in ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K"] {
+            for i, val in ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 1K","Imagen 2K"] {
                 if (val == tierStr)
                     tierChoice := i
             }
@@ -433,7 +432,7 @@ ShowTaskForm(*) {
     g.Add("Text", "xm w145", "Tier:")
     g.Add("Text", "x+10 w145", "Aspect Ratio:")
 
-    tier := g.Add("DropDownList", "vTier xm w145 Choose" . tierChoice, ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K"])
+    tier := g.Add("DropDownList", "vTier xm w145 Choose" . tierChoice, ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 1K","Imagen 2K"])
     ratio := g.Add("DropDownList", "vRatio x+10 w145 Choose" . ratioChoice, ratioList)
 
     g.Add("Text", "xm w145", "Output Format:")
@@ -924,7 +923,7 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, hurl, encourage, useCurl, PendingTasks, CurlTimers
+    global API_KEY, MODEL1, MODEL2, hurl, encourageGen, encourgeImg, useCurl, PendingTasks, CurlTimers
 
     ; // Extract variables from the task object
     agent := taskObj.Agent
