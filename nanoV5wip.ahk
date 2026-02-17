@@ -809,6 +809,7 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
+    global MODEL1, MODEL2, MODEL3
     if (LV_Tasks.GetCount() == 0) {
         MsgBox "No tasks to run!"
         return
@@ -829,7 +830,7 @@ StartBatch(*) {
         }
 
         if (isMixed) {
-            result := MsgBox("Warning: Your batch contains a mix of models (Flash and Pro).`n`nGoogle Batch API requires all tasks in a single job to use the SAME model.")
+            result := MsgBox("Warning: Your batch contains a mix of models (Flash, Pro, or Imagen).`n`nGoogle Batch API requires all tasks in a single job to use the SAME model.")
             return
         }
     }
@@ -843,7 +844,13 @@ StartBatch(*) {
         SetLoadingState(true)
 
         try {
-            selectedBatchModel := InStr(firstAgent, "Flash") ? MODEL1 : MODEL2
+            if InStr(firstAgent, "Flash")
+                selectedBatchModel := MODEL1
+            else if InStr(firstAgent, "Imagen")
+                selectedBatchModel := MODEL3
+            else
+                selectedBatchModel := MODEL2
+
             batchPath := CreateBatchFile(ImageTaskMap, selectedBatchModel)
             LogMessage("BATCH START: File created at " . batchPath)
 
@@ -923,7 +930,7 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, hurl, encourage, encourge, useCurl, PendingTasks, CurlTimers
+    global API_KEY, MODEL1, MODEL2, MODEL3, hurl, useCurl, PendingTasks, CurlTimers
 
     ; // Extract variables from the task object
     agent := taskObj.Agent
@@ -944,7 +951,12 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
     }
 
 
-    MODEL_ID := InStr(agent, "Flash") ? MODEL1 : MODEL2
+    if InStr(agent, "Flash")
+        MODEL_ID := MODEL1
+    else if InStr(agent, "Imagen")
+        MODEL_ID := MODEL3
+    else
+        MODEL_ID := MODEL2
     if (useCurl) {
         payload := CreateJsonPayload(taskObj, fullPath)
         payloadFile := A_ScriptDir . "\gemini_pay_" . A_TickCount . "_" . batchIdx . ".json"
@@ -1066,7 +1078,10 @@ FileToBase64(FilePath) {
 }
 
 CreateJsonPayload(taskObj, taskImagePath) {
-    global encourage
+    global encourageGen, encourageEdt
+
+    ; Select encouragement based on whether we are generating from scratch or editing
+    enc := (taskImagePath == "<GENERATE>") ? encourageGen : encourageEdt
 
     ; Merge instructions into the text prompt since Gemini doesn't support them in config
     fullPrompt := "USER DIRECTIVE: " . TaskObj.Prompt
@@ -1078,7 +1093,7 @@ CreateJsonPayload(taskObj, taskImagePath) {
     cleanPrompt := StrReplace(cleanPrompt, "`r", "")
     cleanPrompt := StrReplace(cleanPrompt, "`n", " ")
 
-    cleanEncourage := StrReplace(encourage, '"', '\"')
+    cleanEncourage := StrReplace(enc, '"', '\"')
     cleanEncourage := StrReplace(cleanEncourage, "`r", "")
     cleanEncourage := StrReplace(cleanEncourage, "`n", " ")
 
