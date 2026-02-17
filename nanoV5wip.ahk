@@ -891,7 +891,7 @@ StartBatch(*) {
         global IsBatchRunning := true
         global CurrentBatchIndex := 0
         Prog_Bar.Value := 0
-        SetTimer ProcessUpscaleTask, 500
+        SetTimer ProcessUpscaleTask, 5000
         return
     }
 
@@ -981,6 +981,10 @@ SetLoadingState(active) {
 ProcessNextTask() {
     global useCurl, PendingTasks
     global CurrentBatchIndex, ImageTaskMap
+
+    if (PendingTasks > 0)
+        return ; Wait for previous task to finish (Rate Limit Safety)
+
     TotalTasks := LV_Tasks.GetCount()
 
     if (CurrentBatchIndex >= TotalTasks) {
@@ -1028,6 +1032,10 @@ ProcessNextTask() {
 ProcessUpscaleTask() {
     global useCurl, PendingTasks
     global CurrentBatchIndex
+
+    if (PendingTasks > 0)
+        return ; Wait for previous task to finish (Rate Limit Safety)
+
     TotalImages := LV_Images.GetCount()
 
     if (CurrentBatchIndex >= TotalImages) {
