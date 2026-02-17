@@ -2019,7 +2019,7 @@ ModelLogMsg(txt) {
     try {
         timestamp := FormatTime(, "HH:mm:ss")
         ModelLog.Value .= "`n[" . timestamp . "] " . txt
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
     }
 }
 
