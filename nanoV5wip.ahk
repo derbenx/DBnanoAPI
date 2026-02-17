@@ -608,10 +608,11 @@ ProcessBatchSubCurl(pid, resFile, payloadFile) {
     resText := ""
     if FileExist(resFile) {
         resText := FileRead(resFile)
-        FileDelete(resFile)
+        ; FileDelete(resFile)
     }
-    if FileExist(payloadFile)
-        FileDelete(payloadFile)
+    if FileExist(payloadFile) {
+        ; FileDelete(payloadFile)
+    }
 
     if (resText == "" || InStr(resText, '"error"')) {
         BatchError("Batch Submission Failed: " . resText)
@@ -668,8 +669,8 @@ BatchError(msg) {
 
 CreateBatchFile(TaskMap, selectedModel) {
     batchPath := A_ScriptDir "\batch_job.jsonl"
-    if FileExist(batchPath)
-        FileDelete(batchPath)
+    ; if FileExist(batchPath)
+    ;    FileDelete(batchPath)
 
     fileObj := FileOpen(batchPath, "w", "UTF-8-RAW")
     modelPath := "models/" . selectedModel
@@ -973,9 +974,11 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
 
         LogMessage("Task " . batchIdx . " API URL: " . apiUrl)
-        LogMessage("Task " . batchIdx . " Payload length: " . StrLen(payload))
+        LogMessage("Task " . batchIdx . " Payload: " . payload)
 
-        curlCmd := 'curl -s -N -X POST "' . apiUrl . '" -H "Content-Type: application/json" -d "@' . payloadFile . '" -o "' . responseFile . '"'
+        curlLogFile := A_ScriptDir . "\gemini_curl_err_" . A_TickCount . "_" . batchIdx . ".log"
+        curlCmd := 'curl -s -S -N -X POST "' . apiUrl . '" -H "Content-Type: application/json" -d "@' . payloadFile . '" -o "' . responseFile . '" 2> "' . curlLogFile . '"'
+        LogMessage("Task " . batchIdx . " Curl Command: " . curlCmd)
         Run(curlCmd, , "Hide", &pid)
         global PendingTasks += 1
         CurlTimers[pid] := CheckCurlProgress.Bind(pid, responseFile, payloadFile, batchIdx, nameNoExt)
@@ -1117,7 +1120,7 @@ CreateJsonPayload(taskObj, taskImagePath) {
     cleanEncourage := StrReplace(cleanEncourage, "`r", "")
     cleanEncourage := StrReplace(cleanEncourage, "`n", " ")
 
-    icfg := '"aspectRatio": "' . taskObj.Ratio . '"'
+    icfg := '"aspect_ratio": "' . taskObj.Ratio . '"'
     if (taskObj.Size != "1K")
         icfg .= ', "image_size": "' . taskObj.Size . '"'
 
@@ -1125,16 +1128,16 @@ CreateJsonPayload(taskObj, taskImagePath) {
         payload := '{'
             . '"contents": [{"parts": [{"text": "' . cleanPrompt . '"}]}], '
             . '"system_instruction": {"parts": [{"text": "' . cleanEncourage . '"}]}, '
-            . '"safetySettings": ['
+            . '"safety_settings": ['
                 . '{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, '
                 . '{"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"}, '
                 . '{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, '
                 . '{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}'
             . '], '
-            . '"generationConfig": {'
+            . '"generation_config": {'
                 . '"candidate_count": 1, '
                 . '"response_modalities": ["IMAGE"], '
-                . '"imageConfig": {' . icfg . '}'
+                . '"image_config": {' . icfg . '}'
             . '}'
         . '}'
         return payload
@@ -1156,16 +1159,16 @@ CreateJsonPayload(taskObj, taskImagePath) {
             . imageParts
         . ']}], '
         . '"system_instruction": {"parts": [{"text": "' . cleanEncourage . '"}]}, '
-        . '"safetySettings": ['
+        . '"safety_settings": ['
             . '{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}, '
             . '{"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"}, '
             . '{"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"}, '
             . '{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}'
         . '], '
-        . '"generationConfig": {'
+        . '"generation_config": {'
             . '"candidate_count": 1, '
             . '"response_modalities": ["IMAGE"], '
-            . '"imageConfig": {' . icfg . '}'
+            . '"image_config": {' . icfg . '}'
         . '}'
     . '}'
 
@@ -1249,10 +1252,11 @@ ProcessBatchUploadCurl(pid, resFile, tempBodyFile, selectedModel) {
     resText := ""
     if FileExist(resFile) {
         resText := FileRead(resFile)
-        FileDelete(resFile)
+        ; FileDelete(resFile)
     }
-    if FileExist(tempBodyFile)
-        FileDelete(tempBodyFile)
+    if FileExist(tempBodyFile) {
+        ; FileDelete(tempBodyFile)
+    }
 
     if RegExMatch(resText, '"uri":\s*"([^"]+)"', &match) {
         LogMessage("BATCH UPLOAD SUCCESS: URI is " . match[1])
@@ -1364,7 +1368,7 @@ ProcessBatchStatus(pid, resFile, jobID, targetRow) {
 
         if FileExist(resFile) {
             responseText := FileRead(resFile)
-            FileDelete(resFile)
+            ; FileDelete(resFile)
             HandleBatchStatus(responseText, jobID, targetRow)
         }
     }
@@ -1445,7 +1449,7 @@ ProcessBatchDownload(pid, resFile, targetRow) {
 
         if FileExist(resFile) {
             responseText := FileRead(resFile)
-            FileDelete(resFile)
+            ; FileDelete(resFile)
             HandleBatchDownload(responseText, targetRow)
         }
     }
@@ -1557,7 +1561,7 @@ TestAPIConnection(*) {
             Sleep(50)
             if FileExist(resFile) {
                 responseText := FileRead(resFile)
-                FileDelete(resFile)
+                ; FileDelete(resFile)
                 status := 200
             }
         } else {
@@ -1819,6 +1823,7 @@ CheckCurlProgress(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
 }
 
 ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
+    global DEBUG
     try {
         if CurlTimers.Has(pid) {
             SetTimer(CurlTimers[pid], 0)
@@ -1828,11 +1833,25 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
         responseText := ""
         if FileExist(responseFile) {
             responseText := FileRead(responseFile)
-            FileDelete(responseFile)
+            ; FileDelete(responseFile)
         }
 
-        if FileExist(payloadFile)
-            FileDelete(payloadFile)
+        LogMessage("Task " . batchIdx . " Response: " . responseText)
+
+        ; Try to find curl error log if response is empty
+        if (responseText == "") {
+            Loop Files, A_ScriptDir . "\gemini_curl_err_*.log" {
+                if InStr(A_LoopFileName, "_" . batchIdx . ".log") {
+                    errText := FileRead(A_LoopFileFullPath)
+                    LogMessage("Task " . batchIdx . " Curl Error: " . errText)
+                    ; FileDelete(A_LoopFileFullPath)
+                    break
+                }
+            }
+        }
+
+        ; if FileExist(payloadFile)
+        ;    FileDelete(payloadFile)
 
         global PendingTasks -= 1
 
@@ -1872,10 +1891,10 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
                     LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                 }
             } else {
-                if InStr(responseText, "finishReason") {
-                    ModelLogMsg("Curl task " . batchIdx . " was blocked or failed.")
+                if (RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m)) {
+                    ModelLogMsg("Curl task " . batchIdx . " failed. Reason: " . m[1])
                 } else {
-                    ModelLogMsg("Curl response (no image data).")
+                    ModelLogMsg("Curl task " . batchIdx . " returned no image data. See debug.log.")
                 }
                 LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
             }
