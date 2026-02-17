@@ -12,6 +12,7 @@ global MODEL1 := "gemini-2.5-flash-image" ; 1k
 global MODEL2 := "gemini-3-pro-image-preview" ; 1k 2k 4k
 global MODEL3 := "imagen-4.0-generate-001" ; 2k
 global MODEL4 := "imagen-4.0-ultra-generate-001" ; 2k
+global MODEL5 := "imagen-4.0-upscale-preview"
 global encourageEdt := "You are a professional image-restoration engine. Your goal is to apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear, and perfectly aligned with the reference. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage."
 global encourageGen := "You are a world-class visual concept artist. Transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
 global proVal := "everyone stands on top of a large pile of burgers. the burgers deform under load."
@@ -307,6 +308,9 @@ LoadExistingJobs() {
 }
 
 CalculateCost(agent, res := "1K") {
+ if (agent == "Upscale")
+    return 0.00003
+
  full := agent . " " . res
  base := 0.134 ; pro 1K & pro 2k
  nano := 1
@@ -390,6 +394,7 @@ ShowTaskForm(*) {
     ratioChoice := 5   ; Default: 1:1 (index 5 in the list below)
     formatChoice := 1  ; Default: JPG
     localIdx := 0      ; This will track the task's position inside the Map array
+    typeChoice := 1    ; Default: Standard
 
     ; // Set ratio default based on image detection
     ratioList := ["9:16","4:5","3:4","2:3", "1:1", "3:2", "4:3","5:4","16:9","21:9"]
@@ -407,6 +412,10 @@ ShowTaskForm(*) {
             task := ImageTaskMap[imgIDDisplay][localIdx]
             pVal := task.Prompt
             nVal := task.NegativePrompt
+
+            if (task.Agent == "Upscale") {
+                typeChoice := 2
+            }
 
             tierStr := task.Agent . " " . task.Size
             for i, val in ["Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Imagen 2K","Imagen Ultra 2K"] {
@@ -435,7 +444,11 @@ ShowTaskForm(*) {
     MyGui.Opt("+Disabled")
     g.SetFont("s9", "Segoe UI")
 
-    g.Add("Text",, "Positive Prompt (What to add/change):")
+    g.Add("Text",, "Task Type:")
+    radNormal  := g.Add("Radio", "vTaskType xm " . (typeChoice == 1 ? "Checked" : ""), "Standard")
+    radUpscale := g.Add("Radio", "x+10 " . (typeChoice == 2 ? "Checked" : ""), "Upscale (0.003¢)")
+
+    g.Add("Text", "xm", "Positive Prompt (What to add/change):")
     ed := g.Add("Edit", "vPrompt w300 r3", pVal)
 
     g.Add("Text",, "Negative Prompt (What to avoid):")
@@ -453,21 +466,34 @@ ShowTaskForm(*) {
     popCost := g.Add("Text", "x+10 w145", "$0.00")
 
     UpdatePopCost(*) {
+        isUpscale := radUpscale.Value
         agent := ""
         cost := 0.0
 
-        if RegExMatch(tier.Text, "(.*)\s(\d+K)", &match) {
-            agent := match[1]
-            cost := CalculateCost(agent, match[2])
+        if (isUpscale) {
+            agent := "Upscale"
+            cost := 0.00003
         } else {
-            agent := tier.Text
-            cost := CalculateCost(agent)
+            if RegExMatch(tier.Text, "(.*)\s(\d+K)", &match) {
+                agent := match[1]
+                cost := CalculateCost(agent, match[2])
+            } else {
+                agent := tier.Text
+                cost := CalculateCost(agent)
+            }
         }
 
-        popCost.Value := "$" . Format("{:.3f}", cost)
-        neg.Enabled := !InStr(agent, "Imagen")
+        popCost.Value := "$" . (isUpscale ? Format("{:.5f}", cost) : Format("{:.3f}", cost))
 
-        if (InStr(agent, "Imagen") && (currentImgPath != "<GENERATE>" && currentImgPath != "")) {
+        ed.Enabled := !isUpscale
+        neg.Enabled := !isUpscale && !InStr(agent, "Imagen")
+        tier.Enabled := !isUpscale
+        ratio.Enabled := !isUpscale
+
+        if (isUpscale && (currentImgPath == "<GENERATE>" || currentImgPath == "")) {
+            popCost.Value .= " (ERR: IMG REQ)"
+            popCost.SetFont("cRed")
+        } else if (!isUpscale && InStr(agent, "Imagen") && (currentImgPath != "<GENERATE>" && currentImgPath != "")) {
             popCost.Value .= " (ERR: GEN ONLY)"
             popCost.SetFont("cRed")
         } else {
@@ -475,6 +501,8 @@ ShowTaskForm(*) {
         }
     }
     tier.OnEvent("Change", UpdatePopCost)
+    radNormal.OnEvent("Click", UpdatePopCost)
+    radUpscale.OnEvent("Click", UpdatePopCost)
     UpdatePopCost() ; Initialize
 
     btn := g.Add("Button", "Default xm w300 h40", isEdit ? "Update Task" : "Confirm Task")
@@ -507,11 +535,23 @@ ProcessMergedSelection(Prompt, FullTierName, EntryGui) {
 }
 
 SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
-    ; // Extract Agent and Size from the Tier string (e.g., "Nano Pro 4K")
-    match := ""
-    RegExMatch(Data.Tier, "(.*)\s(\d+K)", &match)
-    agentName := (match) ? match[1] : "Unknown"
-    agentSize := (match) ? match[2] : "1K"
+    global GCP_PROJECT, GCP_TOKEN
+    agentName := ""
+    agentSize := ""
+
+    if (Data.TaskType == 2) { ; Upscale
+        agentName := "Upscale"
+        agentSize := "x2"
+        if (GCP_PROJECT == "YOUR_PROJECT_ID" || GCP_TOKEN == "") {
+             MsgBox "Warning: GCP_PROJECT or GCP_TOKEN is not set. Upscale tasks will likely fail."
+        }
+    } else {
+        ; // Extract Agent and Size from the Tier string (e.g., "Nano Pro 4K")
+        match := ""
+        RegExMatch(Data.Tier, "(.*)\s(\d+K)", &match)
+        agentName := (match) ? match[1] : "Unknown"
+        agentSize := (match) ? match[2] : "1K"
+    }
 
     ; // 1. Collect paths and IDs for the task
     imgID := taskID
@@ -555,7 +595,7 @@ SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
         Format: Data.Format,
         Status: "Pending",
         SourcePath: fullPaths,
-        Cost: CalculateCost(match[1], match[2])
+        Cost: CalculateCost(agentName, agentSize)
     }
 
     ; // 3. Store in the Map using the Task ID (could be "1" or "1+2")
@@ -1021,6 +1061,8 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
             MODEL_ID := MODEL4
         else
             MODEL_ID := MODEL3
+    } else if (agent == "Upscale") {
+        MODEL_ID := MODEL5
     } else
         MODEL_ID := MODEL2
     if (useCurl) {
@@ -1032,7 +1074,10 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         FileAppend(payload, payloadFile, "UTF-8-RAW")
 
         authHeader := ""
-        if InStr(agent, "Imagen") {
+        if (agent == "Upscale") {
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
+            authHeader := ' -H "Authorization: Bearer ' . GCP_TOKEN . '"'
+        } else if InStr(agent, "Imagen") {
             apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
         } else {
             apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
@@ -1071,13 +1116,18 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         ;SetTimeouts(resolve, connect, send, receive) in milliseconds
         whr.SetTimeouts(30000, 60000, 600000, 600000)
 
-        if InStr(agent, "Imagen") {
-            apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
+        if (agent == "Upscale") {
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
+            whr.Open("POST", apiUrl, false)
+            whr.SetRequestHeader("Authorization", "Bearer " . GCP_TOKEN)
         } else {
-            apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
+            if InStr(agent, "Imagen") {
+                apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
+            } else {
+                apiUrl := hurl . MODEL_ID . ":generateContent?key=" . API_KEY
+            }
+            whr.Open("POST", apiUrl, false)
         }
-
-        whr.Open("POST", apiUrl, false)
         whr.SetRequestHeader("Content-Type", "application/json")
 
         whr.Send(payload)
@@ -1113,10 +1163,15 @@ if (whr.Status == 200) {
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
         LV_Tasks.Modify(batchIdx, "", , , , , "Success")
     } else {
-        if (InStr(responseText, '"finishReason"')) {
-            reason := JSON_Get(responseText, "candidates[1].finishReason")
-            ModelLog.Value .= "`n[DROPPED]: Task " . batchIdx . " failed. Reason: " . reason
+        if RegExMatch(responseText, 'i)"message":\s*"([^"]+)"', &m) {
+            ModelLog.Value .= "`n[ERROR]: Task " . batchIdx . " - " . m[1]
+        } else if RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m) {
+            ModelLog.Value .= "`n[SAFETY]: Task " . batchIdx . " - Reason: " . m[1]
+        } else {
+            ModelLog.Value .= "`n[FAILED]: Task " . batchIdx . " - No image data returned."
         }
+        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
+        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
     }
 }
     } catch Error as e {
@@ -1163,6 +1218,23 @@ FileToBase64(FilePath) {
 
 CreateJsonPayload(taskObj, taskImagePath) {
     global encourageGen, encourageEdt, DEBUG
+
+    if (taskObj.Agent == "Upscale") {
+        mime := (taskObj.Format == "PNG") ? "image/png" : "image/jpeg"
+        b64 := FileToBase64(taskImagePath)
+        payload := '{'
+            . '"instances": [{'
+                . '"image": {'
+                    . '"bytesBase64Encoded": "' . b64 . '"'
+                . '}'
+            . '}], '
+            . '"parameters": {'
+                . '"upscaleFactor": "x2", '
+                . '"outputMimeType": "' . mime . '"'
+            . '}'
+        . '}'
+        return payload
+    }
 
     isImagen := InStr(taskObj.Agent, "Imagen")
 
@@ -1894,10 +1966,15 @@ CheckCurlProgress(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
     if FileExist(responseFile) {
         try {
             fileContent := FileRead(responseFile)
-            ; "Drop the stream": Wait until the "data" field is closed by a quote
+            ; "Drop the stream": Wait until the image data field is closed by a quote
             ; Use InStr for performance on large stream files
-            if (p1 := InStr(fileContent, '"data":')) {
-                if (p2 := InStr(fileContent, '"', , p1 + 7)) {
+            p1 := InStr(fileContent, '"data":')
+            if (!p1)
+                p1 := InStr(fileContent, '"bytesBase64Encoded":')
+
+            if (p1) {
+                pStart := InStr(fileContent, ":", , p1)
+                if (pStart && p2 := InStr(fileContent, '"', , pStart)) {
                     if (p3 := InStr(fileContent, '"', , p2 + 1)) {
                         ProcessClose(pid)
                         ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt)
