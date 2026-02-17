@@ -107,13 +107,13 @@ SetTimer(LoadExistingJobs, -500)
 
 if (useCurl) {
   if (FileExist(A_ScriptDir . "\curl.exe") || FileExist(A_WinDir . "\System32\curl.exe")) {
-    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Found curl.exe using curl mode."
+    ModelLogMsg("Found curl.exe using curl mode.")
   } else {
     useCurl := 0
-    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Cannot find curl.exe using standard mode.  The GUI will freeze when doing HTTPS."
+    ModelLogMsg("Cannot find curl.exe using standard mode.  The GUI will freeze when doing HTTPS.")
   }
 } else {
- ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Using standard mode. The GUI will freeze when doing HTTPS."
+ ModelLogMsg("Using standard mode. The GUI will freeze when doing HTTPS.")
 }
 
 ;ModelLogMsg("API_KEY: " . API_KEY)
@@ -151,8 +151,7 @@ SaveCSV(*) {
             }
         }
         fileObj.Close()
-        ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Configuration saved with prompt sanitization."
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+        ModelLogMsg("Configuration saved with prompt sanitization.")
     } catch Error as e {
         MsgBox "Save failed: " . e.Message
     }
@@ -304,14 +303,12 @@ LoadExistingJobs() {
     batView.ModifyCol()
 
     if (jobCount == 0) {
-        ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] jobs.txt is empty. No jobs found."
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+        ModelLogMsg("jobs.txt is empty. No jobs found.")
         return
     }
 
     ; Success: Log the list for the user to see in the status window
-    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Found Jobs:" . foundList
-    SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+    ModelLogMsg("Found Jobs:" . foundList)
 
     global NextCheckTime := A_TickCount + + CheckInterval
     SetTimer(UpdateMonitorProgress, 1000)
@@ -712,8 +709,7 @@ FinishBatchSubmission(responseText) {
     global NextCheckTime := A_TickCount
     SetTimer(UpdateMonitorProgress, 1000)
 
-    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Batch Submitted: " . jobID
-    SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+    ModelLogMsg("Batch Submitted: " . jobID)
     SetLoadingState(false)
     Prog_Bar.Value := 100
     ToggleUI(true)
@@ -726,8 +722,7 @@ BatchError(msg) {
 
     SetLoadingState(false)
     Prog_Bar.Value := 0
-    ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Batch Failed: " . msg
-    SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+    ModelLogMsg("Batch Failed: " . msg)
     ToggleUI(true)
 }
 
@@ -889,8 +884,7 @@ StartBatch(*) {
         }
 
         ToggleUI(false)
-        ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Starting Upscale Queue..."
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+        ModelLogMsg("Starting Upscale Queue...")
         global IsBatchRunning := true
         global CurrentBatchIndex := 0
         Prog_Bar.Value := 0
@@ -935,8 +929,7 @@ StartBatch(*) {
     ToggleUI(false)
 
     if (Radio_Batch.Value) {
-        ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Starting Batch Upload..."
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+        ModelLogMsg("Starting Batch Upload...")
         SetLoadingState(true)
 
         try {
@@ -961,8 +954,7 @@ StartBatch(*) {
         global IsBatchRunning := true
         global CurrentBatchIndex := 0
         Prog_Bar.Value := 0
-        ModelLog.Value .= "`n[" . FormatTime(, "HH:mm:ss") . "] Starting Immediate Queue..."
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+        ModelLogMsg("Starting Immediate Queue...")
         SetTimer ProcessNextTask, 5000
     }
 }
@@ -1143,8 +1135,7 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         global PendingTasks += 1
         CurlTimers[pid] := CheckCurlProgress.Bind(pid, responseFile, payloadFile, batchIdx, nameNoExt)
         SetTimer(CurlTimers[pid], 200)
-        ModelLog.Value .= "`n[curl] " . idxLog . " started (PID: " . pid . ")"
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+        ModelLogMsg("[curl] " . idxLog . " started (PID: " . pid . ")")
         return
     }
 
@@ -1155,13 +1146,10 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
 
         ; --- DEBUG: LOG WHAT IS SENT ---
         if (DEBUG) {
-            timestamp := FormatTime(, "HH:mm:ss")
-            ;FileAppend("`n[" . timestamp . "] --- SENDING TO API ---`n" . payload . "`n", "debug.log")
-            LogMessage("`n[" . timestamp . "] --- SENDING TO API ---`n" . payload . "`n")
+            LogMessage("--- SENDING TO API ---`n" . payload . "`n")
         }
         idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
-        ModelLog.Value .= "`nInfo [" . idxLog . "]: " . MODEL_ID . " " . taskObj.Ratio . " " . taskObj.Size . " " . nameNoExt
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+        ModelLogMsg("Info [" . idxLog . "]: " . MODEL_ID . " " . taskObj.Ratio . " " . taskObj.Size . " " . nameNoExt)
 
         whr := ComObject("WinHttp.WinHttpRequest.5.1")
         ;SetTimeouts(resolve, connect, send, receive) in milliseconds
@@ -1184,9 +1172,7 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
 
         ; --- DEBUG: LOG WHAT IS RECEIVED ---
         if (DEBUG) {
-            timestamp := FormatTime(, "HH:mm:ss")
-            ;FileAppend("`n[" . timestamp . "] --- RECEIVED FROM API ---`nStatus: " . whr.Status . "`nResponse: " . whr.ResponseText . "`n", "debug.log")
-            LogMessage("`n[" . timestamp . "] --- RECEIVED FROM API ---`nStatus: " . whr.Status . "`nResponse: " . whr.ResponseText . "`n")
+            LogMessage("--- RECEIVED FROM API ---`nStatus: " . whr.Status . "`nResponse: " . whr.ResponseText . "`n")
         }
 
 if (whr.Status == 200) {
@@ -1195,10 +1181,8 @@ if (whr.Status == 200) {
     ;finishReason := JSON_Get(whr.ResponseText, "candidates[0].finishReason")
 
     if (fMsg != "") {
-        msg := "`n[" . FormatTime(, "HH:mm:ss") . "] API MESSAGE: " . fMsg . "`n"
-        ModelLog.Value .= msg
-        LogMessage(msg) ; Log to debug.log
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; Scroll to bottom
+        ModelLogMsg("API MESSAGE: " . fMsg . "`n")
+        LogMessage("API MESSAGE: " . fMsg . "`n") ; Log to debug.log
     }
 
     if RegExMatch(responseText, 's)"(data|bytesBase64Encoded)":\s*"([^"]+)"', &imgMatch) {
@@ -1209,32 +1193,28 @@ if (whr.Status == 200) {
         SaveBinaryImage(binData, outPath)
 
         ; Log the successful save location
-        ModelLog.Value .= "`nSaved: " . outPath
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+        ModelLogMsg("Saved: " . outPath)
         if (batchIdx > 0)
             LV_Tasks.Modify(batchIdx, "", , , , , "Success")
     } else {
         idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
         if RegExMatch(responseText, 'i)"message":\s*"([^"]+)"', &m) {
-            ModelLog.Value .= "`n[ERROR]: " . idxLog . " - " . m[1]
+            ModelLogMsg("[ERROR]: " . idxLog . " - " . m[1])
         } else if RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m) {
-            ModelLog.Value .= "`n[SAFETY]: " . idxLog . " - Reason: " . m[1]
+            ModelLogMsg("[SAFETY]: " . idxLog . " - Reason: " . m[1])
         } else {
-            ModelLog.Value .= "`n[FAILED]: " . idxLog . " - No image data returned."
+            ModelLogMsg("[FAILED]: " . idxLog . " - No image data returned.")
         }
         if (batchIdx > 0)
             LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
     }
 }
     } catch Error as e {
         if (DEBUG)
-            ;FileAppend("`n[" . FormatTime() . "] CRITICAL SCRIPT ERROR: " . e.Message . "`n", "debug.log")
-            LogMessage("`n[" . FormatTime() . "] CRITICAL SCRIPT ERROR: " . e.Message . "`n")
+            LogMessage("CRITICAL SCRIPT ERROR: " . e.Message . "`n")
         if (batchIdx > 0)
             LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
-        ModelLog.Value .= "`nERROR: " . e.Message
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+        ModelLogMsg("ERROR: " . e.Message)
     }
 }
 
@@ -1758,8 +1738,7 @@ Base64ToBin(Base64Str) {
 
 TestAPIConnection(*) {
     global useCurl, API_KEY
-    ModelLog.Value .= "`nFetching models..."
-    SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
+    ModelLogMsg("Fetching models...")
     Prog_Bar.Value := 10
 
     try {
@@ -1793,24 +1772,19 @@ TestAPIConnection(*) {
                 modelList .= match[1] . "`r`n"
             }
 
-            ModelLog.Value .= "`n" . modelList
-            SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+            ModelLogMsg(modelList)
 
-            timestamp := FormatTime(, "HH:mm:ss")
-            ;FileAppend("`n[" . timestamp . "] --- SUPPORTED MODELS ---`n" . modelList . "`n", "debug.log")
-            LogMessage("`n[" . timestamp . "] --- SUPPORTED MODELS ---`n" . modelList . "`n")
+            LogMessage("--- SUPPORTED MODELS ---`n" . modelList . "`n")
 
         } else {
             ; Handle errors using your existing catch logic
             ;throw Error("Status " . whr.Status . ": " . whr.ResponseText)
-            ModelLog.Value .= "`nStatus " . whr.Status . ": " . whr.ResponseText
-            SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+            ModelLogMsg("Status " . whr.Status . ": " . whr.ResponseText)
         }
     } catch Error as e {
         Prog_Bar.Value := 0 ;
         ;Status_Text.Value := "Connection Failed"
-        ModelLog.Value .= "`nConnection Failed:" . e.Message
-        SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
+        ModelLogMsg("Connection Failed:" . e.Message)
     }
 }
 
