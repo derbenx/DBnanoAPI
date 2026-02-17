@@ -881,8 +881,8 @@ StartBatch(*) {
             MsgBox "No images to upscale!"
             return
         }
-        if (GCP_PROJECT == "YOUR_PROJECT_ID" || GCP_TOKEN == "") {
-             MsgBox "Warning: GCP_PROJECT or GCP_TOKEN is not set. Upscale will likely fail."
+        if (GCP_PROJECT == "YOUR_PROJECT_ID" || API_KEY == "USE YER OWN") {
+             MsgBox "Warning: GCP_PROJECT or API_KEY is not set. Upscale will likely fail."
         }
 
         ToggleUI(false)
@@ -891,7 +891,7 @@ StartBatch(*) {
         global IsBatchRunning := true
         global CurrentBatchIndex := 0
         Prog_Bar.Value := 0
-        SetTimer ProcessUpscaleTask, 5000
+        SetTimer ProcessUpscaleTask, -500
         return
     }
 
@@ -989,6 +989,7 @@ ProcessNextTask() {
 
     if (CurrentBatchIndex >= TotalTasks) {
         SetTimer(ProcessNextTask, 0) ; // Stop the timer
+        global IsBatchRunning := false
         if (!useCurl || PendingTasks == 0)
             ToggleUI(true)               ; // Re-enable buttons
         return
@@ -1030,22 +1031,25 @@ ProcessNextTask() {
 }
 
 ProcessUpscaleTask() {
-    global useCurl, PendingTasks
-    global CurrentBatchIndex
+    global useCurl, PendingTasks, CurrentBatchIndex, IsBatchRunning, Prog_Bar
 
-    if (PendingTasks > 0)
-        return ; Wait for previous task to finish (Rate Limit Safety)
+    if (PendingTasks > 0) {
+        SetTimer(ProcessUpscaleTask, -1000) ; check again soon
+        return
+    }
 
     TotalImages := LV_Images.GetCount()
 
     if (CurrentBatchIndex >= TotalImages) {
-        SetTimer(ProcessUpscaleTask, 0)
+        IsBatchRunning := false
+        Prog_Bar.Value := 100
         if (!useCurl || PendingTasks == 0)
             ToggleUI(true)
         return
     }
 
     CurrentBatchIndex++
+    Prog_Bar.Value := (CurrentBatchIndex / TotalImages) * 100
 
     imgID := LV_Images.GetText(CurrentBatchIndex, 1)
     fullPath := LV_Images.GetText(CurrentBatchIndex, 5)
@@ -1067,11 +1071,12 @@ ProcessUpscaleTask() {
         Ratio: "1:1" ; Not used for upscale but prevents errors
     }
 
-    RunGeminiTask(fullPath, taskObj, 0) ; batchIdx 0 means we don't update LV_Tasks
+    RunGeminiTask(fullPath, taskObj, -CurrentBatchIndex) ; Negative index for upscale logging
+    SetTimer(ProcessUpscaleTask, -5000) ; Re-arm one-shot
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, GCP_REGION, GCP_PROJECT, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
 
     MODEL_ID := ""
     payload := ""
@@ -1117,25 +1122,25 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
 
         authHeader := ""
         if (agent == "Upscale") {
-            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
-            authHeader := ' -H "Authorization: Bearer ' . GCP_TOKEN . '"'
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict?key=" . API_KEY
         } else if InStr(agent, "Imagen") {
             apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
         } else {
             apiUrl := hurl . MODEL_ID . ":streamGenerateContent?key=" . API_KEY
         }
 
-        LogMessage("Task " . batchIdx . " API URL: " . apiUrl)
-        LogMessage("Task " . batchIdx . " Payload: " . payload)
+        idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
+        LogMessage(idxLog . " API URL: " . apiUrl)
+        LogMessage(idxLog . " Payload: " . payload)
 
         curlLogFile := A_ScriptDir . "\gemini_curl_err_" . A_TickCount . "_" . batchIdx . ".log"
         curlCmd := 'curl -s -S -N -X POST "' . apiUrl . '" -H "Content-Type: application/json"' . authHeader . ' -d "@' . payloadFile . '" -o "' . responseFile . '" 2> "' . curlLogFile . '"'
-        LogMessage("Task " . batchIdx . " Curl Command: " . curlCmd)
+        LogMessage(idxLog . " Curl Command: " . curlCmd)
         Run(curlCmd, , "Hide", &pid)
         global PendingTasks += 1
         CurlTimers[pid] := CheckCurlProgress.Bind(pid, responseFile, payloadFile, batchIdx, nameNoExt)
         SetTimer(CurlTimers[pid], 200)
-        ModelLog.Value .= "`n[curl] Task " . batchIdx . " started (PID: " . pid . ")"
+        ModelLog.Value .= "`n[curl] " . idxLog . " started (PID: " . pid . ")"
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A")
         return
     }
@@ -1151,7 +1156,8 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
             ;FileAppend("`n[" . timestamp . "] --- SENDING TO API ---`n" . payload . "`n", "debug.log")
             LogMessage("`n[" . timestamp . "] --- SENDING TO API ---`n" . payload . "`n")
         }
-        ModelLog.Value .= "`nInfo: " . MODEL_ID . " " . taskObj.Ratio . " " . taskObj.Size . " " . nameNoExt
+        idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
+        ModelLog.Value .= "`nInfo [" . idxLog . "]: " . MODEL_ID . " " . taskObj.Ratio . " " . taskObj.Size . " " . nameNoExt
         SendMessage(0x0115, 7, 0, ModelLog.Hwnd, "A") ; WM_VSCROLL = 0x0115, SB_BOTTOM = 7
 
         whr := ComObject("WinHttp.WinHttpRequest.5.1")
@@ -1159,9 +1165,8 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
         whr.SetTimeouts(30000, 60000, 600000, 600000)
 
         if (agent == "Upscale") {
-            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict"
+            apiUrl := "https://" . GCP_REGION . "-aiplatform.googleapis.com/v1/projects/" . GCP_PROJECT . "/locations/" . GCP_REGION . "/publishers/google/models/" . MODEL_ID . ":predict?key=" . API_KEY
             whr.Open("POST", apiUrl, false)
-            whr.SetRequestHeader("Authorization", "Bearer " . GCP_TOKEN)
         } else {
             if InStr(agent, "Imagen") {
                 apiUrl := hurl . MODEL_ID . ":predict?key=" . API_KEY
@@ -1206,12 +1211,13 @@ if (whr.Status == 200) {
         if (batchIdx > 0)
             LV_Tasks.Modify(batchIdx, "", , , , , "Success")
     } else {
+        idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
         if RegExMatch(responseText, 'i)"message":\s*"([^"]+)"', &m) {
-            ModelLog.Value .= "`n[ERROR]: Task " . batchIdx . " - " . m[1]
+            ModelLog.Value .= "`n[ERROR]: " . idxLog . " - " . m[1]
         } else if RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m) {
-            ModelLog.Value .= "`n[SAFETY]: Task " . batchIdx . " - Reason: " . m[1]
+            ModelLog.Value .= "`n[SAFETY]: " . idxLog . " - Reason: " . m[1]
         } else {
-            ModelLog.Value .= "`n[FAILED]: Task " . batchIdx . " - No image data returned."
+            ModelLog.Value .= "`n[FAILED]: " . idxLog . " - No image data returned."
         }
         if (batchIdx > 0)
             LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
@@ -2058,14 +2064,15 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
             ; FileDelete(responseFile)
         }
 
-        LogMessage("Task " . batchIdx . " Response: " . responseText)
+        idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
+        LogMessage(idxLog . " Response: " . responseText)
 
         ; Try to find curl error log if response is empty
         if (responseText == "") {
             Loop Files, A_ScriptDir . "\gemini_curl_err_*.log" {
                 if InStr(A_LoopFileName, "_" . batchIdx . ".log") {
                     errText := FileRead(A_LoopFileFullPath)
-                    LogMessage("Task " . batchIdx . " Curl Error: " . errText)
+                    LogMessage(idxLog . " Curl Error: " . errText)
                     ; FileDelete(A_LoopFileFullPath)
                     break
                 }
