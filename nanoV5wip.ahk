@@ -454,8 +454,16 @@ ShowTaskForm(*) {
 
     UpdatePopCost(*) {
         if RegExMatch(tier.Text, "(.*)\s(\d+K)", &match) {
-            cost := CalculateCost(match[1], match[2])
+            agent := match[1]
+            cost := CalculateCost(agent, match[2])
             popCost.Value := "$" . Format("{:.3f}", cost)
+
+            if (InStr(agent, "Imagen") && currentImgPath != "<GENERATE>") {
+                popCost.Value .= " (ERR: GEN ONLY)"
+                popCost.SetFont("cRed")
+            } else {
+                popCost.SetFont("cDefault")
+            }
         }
     }
     tier.OnEvent("Change", UpdatePopCost)
@@ -523,8 +531,8 @@ SubmitTaskWithExtras(Data, isEdit := false, editIndex := 0, taskID := "") {
     if (imgID == "")
         return
 
-    if (InStr(agentName, "Imagen") && InStr(fullPaths, "|")) {
-        MsgBox "Imagen does not support multiple reference images. Please select only one image."
+    if (InStr(agentName, "Imagen") && fullPaths != "<GENERATE>") {
+        MsgBox "Imagen 4 only supports text-to-image generation. Please use a 'GENERATE' task."
         return
     }
 
@@ -1152,15 +1160,9 @@ CreateJsonPayload(taskObj, taskImagePath) {
 
     if (isImagen) {
         promptText := "USER DIRECTIVE: " . taskObj.Prompt . ". Aspect Ratio: " . taskObj.Ratio . ". Avoid: " . taskObj.NegativePrompt
-        imagePart := ""
-        if (taskImagePath != "<GENERATE>" && taskImagePath != "") {
-             b64 := FileToBase64(taskImagePath)
-             mime := (taskObj.Format = "PNG") ? "image/png" : "image/jpeg"
-             imagePart := ', "image": {"bytesBase64Encoded": "' . b64 . '", "mimeType": "' . mime . '"}'
-        }
 
         payload := '{'
-            . '"instances": [{"prompt": "' . StrReplace(StrReplace(promptText, '"', '\"'), "`n", " ") . '"' . imagePart . '}], '
+            . '"instances": [{"prompt": "' . StrReplace(StrReplace(promptText, '"', '\"'), "`n", " ") . '"}], '
             . '"parameters": {'
                 . '"sampleCount": 1, '
                 . '"aspectRatio": "' . taskObj.Ratio . '"'
