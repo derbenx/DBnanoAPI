@@ -68,8 +68,9 @@ LV_Images.OnEvent("DoubleClick", ImageListDoubleClick)
 Pic_Preview := MyGui.Add("Pic", "x+10 yp w" . imgw . " h" . imgh . " +Border +Center ", "")
 
 MyGui.SetFont("s10 norm")
-LV_Tasks := MyGui.Add("ListView", "x30 y250 w" . imgw*2+10 . " h140", ["Img", "Agent", "Res", "Ratio", "Status", "Cost ($)", "Prompt", "TaskIdx"])
+LV_Tasks := MyGui.Add("ListView", "x30 y250 w" . imgw*2+10 . " h140", ["Img", "Agent", "Res", "Ratio", "Status", "Cost ($)", "Prompt", "TaskID", "TaskIdx"])
 LV_Tasks.ModifyCol(8, 0)
+LV_Tasks.ModifyCol(9, 0)
 ;LV_Tasks.OnEvent("Click", TaskListClick)
 LV_Tasks.OnEvent("Click", (*) => UpdateButtonStates())
 LV_Tasks.OnEvent("ItemSelect", (*) => UpdateButtonStates())
@@ -471,12 +472,13 @@ RefreshTaskTable() {
             ; Column 1 clearly shows which Image ID this task belongs to
             ; Col 5 is Status, Col 6 is Cost, Col 7 is Prompt, Col 8 is TaskIdx
             ;LV_Tasks.Add(, imgID, t.Agent, t.Size, t.Ratio, t.Status, Format("{:.3f}", t.Cost), t.Prompt, i)
-            LV_Tasks.Add(, t.IDs, t.Agent, t.Size, t.Ratio, t.Status, Format("{:.3f}", t.Cost), t.Prompt, t.ID)
+            LV_Tasks.Add(, t.IDs, t.Agent, t.Size, t.Ratio, t.Status, Format("{:.3f}", t.Cost), t.Prompt, t.ID, i)
             ;msgbox t.IDs t.Agent t.Size t.Ratio t.ID
         }
     }
     LV_Tasks.ModifyCol()
-    ;LV_Tasks.ModifyCol(8, 0) ; Keep hidden
+    LV_Tasks.ModifyCol(8, 0) ; Hide TaskID
+    LV_Tasks.ModifyCol(9, 0) ; Hide TaskIdx
 }
 
 AsyncSubmitBatchJob(fileUri, selectedModel) {
@@ -664,15 +666,11 @@ UpdateButtonStates() {
         ratio.Enabled := true
         ;fmt.Enabled := true  ; Doesn't work
         
-        ;imgID := LV_Tasks.GetText(selectedTaskRow, 1)
-        localIdx := Integer(LV_Tasks.GetText(selectedTaskRow, 8))
-        tasks := ImageTaskMap[1]
+        imgID := LV_Tasks.GetText(selectedTaskRow, 8)
+        localIdx := Integer(LV_Tasks.GetText(selectedTaskRow, 9))
         
-        msgbox localIdx
-        msgbox tasks.Prompt
-        if ImageTaskMap.Has(localIdx) {
-            ;task := ImageTaskMap[imgID][localIdx]
-            task := ImageTaskMap[localIdx]
+        if ImageTaskMap.Has(imgID) && localIdx <= ImageTaskMap[imgID].Length {
+            task := ImageTaskMap[imgID][localIdx]
             ed.Value := task.Prompt
             neg.Value := task.NegativePrompt
             tier.Text := task.Agent . " " . task.Size
@@ -869,27 +867,13 @@ ProcessNextTask() {
 
     CurrentBatchIndex++ ; // Move to the next row
 
-    ; // Get the Image ID from the UI
-    imgID := LV_Tasks.GetText(CurrentBatchIndex, 1)
+    ; // Get the Task identifiers from the UI
+    imgID := LV_Tasks.GetText(CurrentBatchIndex, 8)
+    localIdx := Integer(LV_Tasks.GetText(CurrentBatchIndex, 9))
     if (imgID == "")
       return
 
-    ; // IMPORTANT: We need to find which "local" index this is
-    ; // for the specific image in the Map.
-    localIdx := 0
-    tempCounter := 0
-    found := false
-    for mID, tasks in ImageTaskMap {
-        for idx, t in tasks {
-            tempCounter++
-            if (tempCounter == CurrentBatchIndex) {
-                localIdx := idx
-                imgID := mID
-                found := true
-                break 2
-            }
-        }
-    }
+    found := ImageTaskMap.Has(imgID) && localIdx <= ImageTaskMap[imgID].Length
 
     ; // Retrieve the object
     if (found) {
@@ -1621,8 +1605,8 @@ AutoSaveTask(*) {
     if (selectedTaskRow == 0)
         return
 
-    imgID := LV_Tasks.GetText(selectedTaskRow, 1)
-    localIdx := Integer(LV_Tasks.GetText(selectedTaskRow, 8))
+    imgID := LV_Tasks.GetText(selectedTaskRow, 8)
+    localIdx := Integer(LV_Tasks.GetText(selectedTaskRow, 9))
     
     ; Parse Tier string [cite: 298]
     RegExMatch(tier.Text, "(.*)\s(\d+K)", &match)
@@ -1811,8 +1795,8 @@ $Del:: {
     else if (FocusedCtrl == LV_Tasks) {
         Row := LV_Tasks.GetNext(0, "Focused")
         if (Row) {
-            targetImgID := LV_Tasks.GetText(Row, 1)
-            taskIdx := Integer(LV_Tasks.GetText(Row, 8))
+            targetImgID := LV_Tasks.GetText(Row, 8)
+            taskIdx := Integer(LV_Tasks.GetText(Row, 9))
 
             if ImageTaskMap.Has(targetImgID) {
                 if (taskIdx > 0 && taskIdx <= ImageTaskMap[targetImgID].Length) {
