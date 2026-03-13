@@ -1293,9 +1293,6 @@ UpdateMonitorProgress() {
             SetTimer(UpdateMonitorProgress, 0)
             try batBar.Value := 0
             ModelLogMsg("Batch monitor: No active jobs. Stopping.")
-            if (LastFPress = true)
-              LastFPress := false
-              
             return
         }
 
@@ -1310,8 +1307,6 @@ UpdateMonitorProgress() {
         CurrentMonitorIndex += 1
         NextCheckTime := A_TickCount + CheckInterval
         ModelLogMsg("Batch monitor: Checked " . target.id . ". Next check in " . CheckInterval//1000 . "s")
-        if (LastFPress = true)
-          LastFPress := false
           
         try batBar.Value := 0
     } else {
@@ -1707,11 +1702,9 @@ LogMessage(msg) {
 ^r:: Reload()
 ^f:: {
     global LastFPress
-    if (LastFPress = true)
+    if (A_TickCount - LastFPress < 1000)
         return
-    ;if (A_TickCount - LastFPress < 500)
-    ;    return
-    LastFPress := true
+    LastFPress := A_TickCount
 
     global NextCheckTime := A_TickCount ; Reset timer to now
     UpdateMonitorProgress()             ; Manually trigger the check
