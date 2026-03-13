@@ -36,7 +36,7 @@ global UIW:=900 ; UI width
 global imgw := 300
 global imgh := 200
 global TotalBatchCost := 0.0
-global ImageTaskMap := Map()
+global ImageTaskMap := []
 global CurrentPath := ""
 global IsBatchRunning := false
 global CurrentBatchIndex := 0
@@ -46,6 +46,9 @@ global NextImageID := 1
 global PendingTasks := 0
 global CurlTimers := Map()
 global ActiveStreams := Map()
+; GUI Controls
+global MyGui, Tab, LV_Images, Pic_Preview, LV_Tasks, Btn_Gen, Btn_Add, TotalCostDisplay, Radio_Immediate, Radio_Batch, Btn_load, Btn_save, Btn_Test, Btn_Run, Prog_Bar
+global ed, neg, tier, ratio, fmt, popCost, batView, Btn_ClearBatches, batBar, ModelLog
 ; }
 
 if !DirExist(OutputDir)
@@ -74,6 +77,7 @@ LV_Tasks.ModifyCol(9, 0)
 ;LV_Tasks.OnEvent("Click", TaskListClick)
 LV_Tasks.OnEvent("Click", (*) => UpdateButtonStates())
 LV_Tasks.OnEvent("ItemSelect", (*) => UpdateButtonStates())
+LV_Tasks.OnEvent("ItemFocus", (*) => UpdateButtonStates())
 ;LV_Tasks.OnEvent("DoubleClick", ShowTaskForm)
 
 MyGui.SetFont("s12 bold")
@@ -104,7 +108,7 @@ ed := MyGui.Add("Edit", "w290 r7 disabled" )
 ed.OnEvent("Change", AutoSaveTask)
 
 MyGui.Add("Text",, "Negative Prompt:")
-neg := MyGui.Add("Edit", "vNeg w290 r3 disabled")
+neg := MyGui.Add("Edit", "w290 r3 disabled")
 neg.OnEvent("Change", AutoSaveTask)
 
 MyGui.Add("Text", "w100", "Tier:")
@@ -112,11 +116,11 @@ tier := MyGui.Add("DropDownList", "x+10 disabled", ["Nano Flash 1K", "Nano Pro 1
 tier.OnEvent("Change", AutoSaveTask)
 
 MyGui.Add("Text", "x" . imgw*2+50 . " y+10 ", "Aspect Ratio:")
-ratio := MyGui.Add("DropDownList", "x+10 vRatio disabled", ratioList)
+ratio := MyGui.Add("DropDownList", "x+10 disabled", ratioList)
 ratio.OnEvent("Change", AutoSaveTask)
 
 MyGui.Add("Text", "x" . imgw*2+50 . " y+10 w100", "Output:")
-fmt := MyGui.Add("DropDownList", "x+10 vFormat disabled", ["JPG", "PNG"])
+fmt := MyGui.Add("DropDownList", "x+10 disabled", ["JPG", "PNG"])
 fmt.OnEvent("Change", AutoSaveTask)
 
 MyGui.Add("Text", "x" . imgw*2+50 . " y+10 w100", "Cost:")
@@ -205,17 +209,27 @@ CreateNewTask(*) {
         Cost: CalculateCost("Nano Flash", "1K")
     }
 
-    ; 5. Add to the map and refresh
-    ; We use the first ID as the primary key for the map
-    primaryKey := selectedIDs[1]
-    if !ImageTaskMap.Has(primaryKey)
-        ImageTaskMap[primaryKey] := []
-    
-    ImageTaskMap[primaryKey].Push(newTask)
+    ; 5. Add to the array and refresh
+    ImageTaskMap.Push(newTask)
+
+    ; 6. Update task counts for all selected images
+    for id in selectedIDs {
+        Loop LV_Images.GetCount() {
+            if (LV_Images.GetText(A_Index, 1) == id) {
+                taskCount := 0
+                for t in ImageTaskMap {
+                    if (IsIDInMergedID(id, t.IDs)) {
+                        taskCount++
+                    }
+                }
+                LV_Images.Modify(A_Index, "", , , taskCount)
+                break
+            }
+        }
+    }
 
     RefreshTaskTable()
     UpdateTotalDisplay()
-    UpdateButtonStates()
    
     ; Find the newly added row and select it to enable the side panel
     ;Loop LV_Tasks.GetCount() {
@@ -239,23 +253,18 @@ SaveCSV(*) {
         Loop LV_Images.GetCount() {
             imgID := LV_Images.GetText(A_Index, 1)
             filePath := LV_Images.GetText(A_Index, 5)
-
-            ; Write the image path line: img, index, path
             fileObj.WriteLine("img," . imgID . "," . filePath)
+        }
+        for task in ImageTaskMap {
+            ; Cleaning BOTH prompts of commas to prevent column shifting
+            cleanPrompt := StrReplace(task.Prompt, ",", "¢")
+            cleanNeg    := StrReplace(task.NegativePrompt, ",", "¢")
+            cleanPrompt := StrReplace(StrReplace(cleanPrompt, "`r", " "), "`n", " ") ; no lf cr
+            cleanNeg := StrReplace(StrReplace(cleanNeg, "`r", " "), "`n", " ") ; no lf cr
 
-            if ImageTaskMap.Has(imgID) {
-                for task in ImageTaskMap[imgID] {
-                    ; Cleaning BOTH prompts of commas to prevent column shifting
-                    cleanPrompt := StrReplace(task.Prompt, ",", "¢")
-                    cleanNeg    := StrReplace(task.NegativePrompt, ",", "¢")
-                    cleanPrompt := StrReplace(StrReplace(cleanPrompt, "`r", " "), "`n", " ") ; no lf cr
-                    cleanNeg := StrReplace(StrReplace(cleanNeg, "`r", " "), "`n", " ") ; no lf cr
-
-                    ; New structure: tsk, parentIdx, size, agent, ratio, prompt, negPrompt, format
-                    line := "tsk," . imgID . "," . task.Size . "," . task.Agent . "," . task.Ratio . "," . cleanPrompt . "," . cleanNeg . "," . task.Format
-                    fileObj.WriteLine(line)
-                }
-            }
+            ; New structure: tsk, parentIdx, size, agent, ratio, prompt, negPrompt, format
+            line := "tsk," . task.ID . "," . task.Size . "," . task.Agent . "," . task.Ratio . "," . cleanPrompt . "," . cleanNeg . "," . task.Format
+            fileObj.WriteLine(line)
         }
         fileObj.Close()
         ModelLogMsg("Configuration saved with prompt sanitization.")
@@ -269,7 +278,7 @@ LoadCSV(*) {
     if (loadPath == "")
         return
 
-    global ImageTaskMap := Map()
+    global ImageTaskMap := []
     global NextImageID := 1
     LV_Images.Delete()
     LV_Tasks.Delete()
@@ -294,7 +303,6 @@ LoadCSV(*) {
                     }
                     ix := String(NextImageID++)
                     LV_Images.Add(, ix, sizeMB, 0, fn, path)
-                    ImageTaskMap[ix] := []
                     tempImgMap[idx] := ix
                 }
             }
@@ -304,6 +312,8 @@ LoadCSV(*) {
                     currentIx := tempImgMap[parentIdx]
 
                     newTask := {
+                        ID: currentIx,
+                        IDs: currentIx,
                         Size: parts[3],
                         Agent: parts[4],
                         Ratio: parts[5],
@@ -324,16 +334,20 @@ LoadCSV(*) {
                         }
                     }
 
-                    ImageTaskMap[currentIx].Push(newTask)
-                    ; Update task count in ListView
-                    Loop LV_Images.GetCount() {
-                        if (LV_Images.GetText(A_Index, 1) == currentIx) {
-                            LV_Images.Modify(A_Index, "", , , ImageTaskMap[currentIx].Length)
-                            break
-                        }
-                    }
+                    ImageTaskMap.Push(newTask)
                 }
             }
+        }
+        ; Update task counts in ListView
+        Loop LV_Images.GetCount() {
+            id := LV_Images.GetText(A_Index, 1)
+            taskCount := 0
+            for t in ImageTaskMap {
+                if (IsIDInMergedID(id, t.IDs)) {
+                    taskCount++
+                }
+            }
+            LV_Images.Modify(A_Index, "", , , taskCount)
         }
         ; UI Refresh logic
         if (LV_Images.GetCount() > 0) {
@@ -371,15 +385,12 @@ UpdatePreview(ImgPath) {
 RefreshAllCosts(*) {
     Btn_Run.Text := Radio_Batch.Value ? "RUN BATCH" : "RUN IMMEDIATE"
 
-    ; Loop through every image path in your map
-    for path, tasks in ImageTaskMap {
-        ; Loop through every task for that image
-        for t in tasks {
-            ; Re-calculate the cost based on the current toggle state
-            t.Cost := CalculateCost(t.Agent, t.Size)
-            ; Update the mode of the task to match the new toggle
-            t.Mode := Radio_Batch.Value ? "Batch" : "Immediate"
-        }
+    ; Loop through every task
+    for t in ImageTaskMap {
+        ; Re-calculate the cost based on the current toggle state
+        t.Cost := CalculateCost(t.Agent, t.Size)
+        ; Update the mode of the task to match the new toggle
+        t.Mode := Radio_Batch.Value ? "Batch" : "Immediate"
     }
 
     ; Update the "Total: $0.0000" text
@@ -454,10 +465,8 @@ UpdateTotalDisplay() {
     ;if (Radio_Upscale.Value) {
     ;    TotalBatchCost := LV_Images.GetCount() * 0.003
     ;} else {
-        for path, tasks in ImageTaskMap {
-            for t in tasks {
-                TotalBatchCost += t.Cost
-            }
+        for t in ImageTaskMap {
+            TotalBatchCost += t.Cost
         }
     ;}
     TotalCostDisplay.Value := "Total: $" . Format("{:.4f}", TotalBatchCost)
@@ -466,15 +475,11 @@ UpdateTotalDisplay() {
 RefreshTaskTable() {
     LV_Tasks.Delete()
 
-    ; Loop through the Map by ID
-    for imgID, tasks in ImageTaskMap {
-        for i, t in tasks {
-            ; Column 1 clearly shows which Image ID this task belongs to
-            ; Col 5 is Status, Col 6 is Cost, Col 7 is Prompt, Col 8 is TaskIdx
-            ;LV_Tasks.Add(, imgID, t.Agent, t.Size, t.Ratio, t.Status, Format("{:.3f}", t.Cost), t.Prompt, i)
-            LV_Tasks.Add(, t.IDs, t.Agent, t.Size, t.Ratio, t.Status, Format("{:.3f}", t.Cost), t.Prompt, t.ID, i)
-            ;msgbox t.IDs t.Agent t.Size t.Ratio t.ID
-        }
+    ; Loop through the Array
+    for i, t in ImageTaskMap {
+        ; Column 1 clearly shows which Image ID this task belongs to
+        ; Col 5 is Status, Col 6 is Cost, Col 7 is Prompt, Col 8 is TaskID, Col 9 is TaskIdx
+        LV_Tasks.Add(, t.IDs, t.Agent, t.Size, t.Ratio, t.Status, Format("{:.3f}", t.Cost), t.Prompt, t.ID, i)
     }
     LV_Tasks.ModifyCol()
     LV_Tasks.ModifyCol(8, 0) ; Hide TaskID
@@ -579,7 +584,7 @@ BatchError(msg) {
 }
 
 
-CreateBatchFile(TaskMap, selectedModel) {
+CreateBatchFile(TaskArray, selectedModel) {
     batchPath := A_ScriptDir "\batch_job.jsonl"
      ;if FileExist(batchPath)
      ;   FileDelete(batchPath)
@@ -587,22 +592,20 @@ CreateBatchFile(TaskMap, selectedModel) {
     fileObj := FileOpen(batchPath, "w", "UTF-8-RAW")
     modelPath := "models/" . selectedModel
 
-    for imgID, tasks in TaskMap {
-        for task in tasks {
-            ; Use the specific SourcePath saved with this task
-            currentTaskPath := task.SourcePath
-            fn := StrReplace(currentTaskPath, "\", "_")
+    for task in TaskArray {
+        ; Use the specific SourcePath saved with this task
+        currentTaskPath := task.SourcePath
+        fn := StrReplace(currentTaskPath, "\", "_")
 
-            ; Pass the specific task's path to the payload creator
-            payload := CreateJsonPayload(task, currentTaskPath)
-            payload := Trim(payload)
-            payload := RegExReplace(payload, "[\r\n\t]+", " ")
-            payload := RegExReplace(payload, "\s+", " ")
-            payload := Trim(payload)
+        ; Pass the specific task's path to the payload creator
+        payload := CreateJsonPayload(task, currentTaskPath)
+        payload := Trim(payload)
+        payload := RegExReplace(payload, "[\r\n\t]+", " ")
+        payload := RegExReplace(payload, "\s+", " ")
+        payload := Trim(payload)
 
-            line := '{"custom_id": "' . fn . '", "request": {"model": "' . modelPath . '", ' . SubStr(payload, 2) . '}'
-            fileObj.WriteLine(line)
-        }
+        line := '{"custom_id": "' . fn . '", "request": {"model": "' . modelPath . '", ' . SubStr(payload, 2) . '}'
+        fileObj.WriteLine(line)
     }
     fileObj.Close()
     return batchPath
@@ -612,9 +615,6 @@ AddNullImage(*) {
     global NextImageID
     ix := String(NextImageID++)
     LV_Images.Add(, ix, "0.00", 0, "GENERATE", "<GENERATE>")
-    if !ImageTaskMap.Has(ix) {
-        ImageTaskMap[ix] := []
-    }
     LV_Images.Modify(LV_Images.GetCount(), "Select Focus")
     ImageListClick(LV_Images, LV_Images.GetCount())
     UpdateTotalDisplay()
@@ -628,10 +628,6 @@ Gui_DropFiles(GuiObj, GuiCtrlObj, FileArray, X, Y) {
         ix := String(NextImageID++)
         sizeMB := Format("{:.2f}", FileGetSize(file) / 1024 / 1024)
         LV_Images.Add(, ix, sizeMB, 0, fn, file)
-
-        if !ImageTaskMap.Has(ix) {
-            ImageTaskMap[ix] := [] ;
-        }
     }
     LV_Images.ModifyCol(1, "AutoHdr")
     if (LV_Images.GetCount() > 0) {
@@ -644,6 +640,7 @@ Gui_DropFiles(GuiObj, GuiCtrlObj, FileArray, X, Y) {
 }
 
 UpdateButtonStates() {
+    global ed, neg, tier, ratio, fmt, popCost, ImageTaskMap
     selectedTaskRow := LV_Tasks.GetNext(0, "Focused")
     taskCount := LV_Tasks.GetCount()
     imgCount  := LV_Images.GetCount()
@@ -655,22 +652,20 @@ UpdateButtonStates() {
     ; Run Batch: Must be uniform AND non-Imagen
     btn_Run.Enabled := AreAgentsUniformAndBatchable()
     
-    
     ; --- 2. SIDE PANEL LOGIC ---
-    ;tooltip LV_Tasks.GetCount("S")
-    if (LV_Tasks.GetCount("S")>0 && selectedTaskRow > 0) {
+    if (selectedTaskRow > 0) {
         ; A task is selected: Enable and Populate
         ed.Enabled := true
         neg.Enabled := true
         tier.Enabled := true
         ratio.Enabled := true
-        ;fmt.Enabled := true  ; Doesn't work
+        fmt.Enabled := true
         
-        imgID := LV_Tasks.GetText(selectedTaskRow, 8)
         localIdx := Integer(LV_Tasks.GetText(selectedTaskRow, 9))
         
-        if ImageTaskMap.Has(imgID) && localIdx <= ImageTaskMap[imgID].Length {
-            task := ImageTaskMap[imgID][localIdx]
+        if localIdx > 0 && localIdx <= ImageTaskMap.Length {
+            ModelLogMsg("Loading task #" . localIdx)
+            task := ImageTaskMap[localIdx]
             ed.Value := task.Prompt
             neg.Value := task.NegativePrompt
             tier.Text := task.Agent . " " . task.Size
@@ -732,10 +727,10 @@ ImageListDoubleClick(LV, RowNum) {
     LV.Modify(RowNum, "", , sizeMB, , fn, newPath)
 
     ; Update SourcePath in ImageTaskMap for ALL tasks involving this image
-    for mID, tasks in ImageTaskMap {
-        if (IsIDInMergedID(imgID, mID)) {
+    for t in ImageTaskMap {
+        if (IsIDInMergedID(imgID, t.IDs)) {
              newPaths := ""
-             ids := StrSplit(mID, "+")
+             ids := StrSplit(t.IDs, ",")
              for id in ids {
                  path := ""
                  Loop LV_Images.GetCount() {
@@ -746,9 +741,7 @@ ImageListDoubleClick(LV, RowNum) {
                  }
                  newPaths .= (newPaths == "" ? "" : "|") . path
              }
-             for t in tasks {
-                 t.SourcePath := newPaths
-             }
+             t.SourcePath := newPaths
         }
     }
 
@@ -777,15 +770,13 @@ StartBatch(*) {
     }
     if (Radio_Batch.Value) {
         firstSize := ""
-        for filePath, taskList in ImageTaskMap {
-            for taskObj in taskList {
-                if (firstAgent == "") {
-                    firstAgent := taskObj.Agent
-                    firstSize := taskObj.Size
-                } else if (taskObj.Agent != firstAgent || (InStr(firstAgent, "Imagen") && taskObj.Size != firstSize)) {
-                    isMixed := true
-                    break 2
-                }
+        for taskObj in ImageTaskMap {
+            if (firstAgent == "") {
+                firstAgent := taskObj.Agent
+                firstSize := taskObj.Size
+            } else if (taskObj.Agent != firstAgent || (InStr(firstAgent, "Imagen") && taskObj.Size != firstSize)) {
+                isMixed := true
+                break
             }
         }
 
@@ -868,21 +859,18 @@ ProcessNextTask() {
     CurrentBatchIndex++ ; // Move to the next row
 
     ; // Get the Task identifiers from the UI
-    imgID := LV_Tasks.GetText(CurrentBatchIndex, 8)
     localIdx := Integer(LV_Tasks.GetText(CurrentBatchIndex, 9))
-    if (imgID == "")
-      return
 
-    found := ImageTaskMap.Has(imgID) && localIdx <= ImageTaskMap[imgID].Length
+    found := localIdx > 0 && localIdx <= ImageTaskMap.Length
 
     ; // Retrieve the object
     if (found) {
         try {
-            targetTask := ImageTaskMap[imgID][localIdx]
+            targetTask := ImageTaskMap[localIdx]
             RunGeminiTask(targetTask.SourcePath, targetTask, CurrentBatchIndex)
         } catch Error as e {
             ;if you get this, try disabling the try/catch
-            ModelLogMsg("Task mapping error: " e.Message . " " . imgID . " " . localIdx)
+            ModelLogMsg("Task mapping error: " e.Message . " " . localIdx)
         }
     }
 }
@@ -1605,7 +1593,6 @@ AutoSaveTask(*) {
     if (selectedTaskRow == 0)
         return
 
-    imgID := LV_Tasks.GetText(selectedTaskRow, 8)
     localIdx := Integer(LV_Tasks.GetText(selectedTaskRow, 9))
     
     ; Parse Tier string [cite: 298]
@@ -1613,9 +1600,9 @@ AutoSaveTask(*) {
     agentName := (match) ? match[1] : "Unknown"
     agentSize := (match) ? match[2] : "1K"
 
-    ; Update the task object in the Map [cite: 71, 72]
-    if ImageTaskMap.Has(imgID) {
-        task := ImageTaskMap[imgID][localIdx]
+    ; Update the task object in the Array
+    if localIdx > 0 && localIdx <= ImageTaskMap.Length {
+        task := ImageTaskMap[localIdx]
         task.Prompt := ed.Value
         task.NegativePrompt := neg.Value
         task.Agent := agentName
@@ -1706,18 +1693,13 @@ LogMessage(msg) {
 ^d:: {
     textOut := "--- CURRENT IMAGETASKMAP ---`n`n"
     
-    for primaryKey, taskList in ImageTaskMap {
-        textOut .= "Image ID Group: [" . primaryKey . "]`n"
-        
-        for index, task in taskList {
-            textOut .= "  Task #" . index . ":`n"
-            textOut .= "    - Agent: " . task.Agent . " (" . task.Size . ")`n"
-            textOut .= "    - Status: " . task.Status . "`n"
-            textOut .= "    - ID: " . task.ID . "`n"
-            textOut .= "    - IDs Involved: " . task.IDs . "`n"
-            textOut .= "    - Prompt: " . SubStr(task.Prompt, 1, 50) . (StrLen(task.Prompt) > 50 ? "..." : "") . "`n"
-        }
-        textOut .= "`n"
+    for index, task in ImageTaskMap {
+        textOut .= "  Task #" . index . ":`n"
+        textOut .= "    - Agent: " . task.Agent . " (" . task.Size . ")`n"
+        textOut .= "    - Status: " . task.Status . "`n"
+        textOut .= "    - ID: " . task.ID . "`n"
+        textOut .= "    - IDs Involved: " . task.IDs . "`n"
+        textOut .= "    - Prompt: " . SubStr(task.Prompt, 1, 50) . (StrLen(task.Prompt) > 50 ? "..." : "") . "`n"
     }
     
     MsgBox(textOut)
@@ -1745,41 +1727,27 @@ $Del:: {
         if (Row) {
             imgID := LV_Images.GetText(Row, 1)
 
-            ; Identify all task keys that involve this image ID
-            involvedKeys := []
-            for mID, tasks in ImageTaskMap {
-                if (IsIDInMergedID(imgID, mID)) {
-                    involvedKeys.Push(mID)
+            ; Identify all tasks that involve this image ID and remove them
+            i := ImageTaskMap.Length
+            while i > 0 {
+                if (IsIDInMergedID(imgID, ImageTaskMap[i].IDs)) {
+                    ImageTaskMap.RemoveAt(i)
                 }
-            }
-
-            ; For each involved key, we might need to update other images' task counts
-            otherImagesToUpdate := Map()
-            for k in involvedKeys {
-                parts := StrSplit(k, "+")
-                for p in parts {
-                    if (p != imgID)
-                        otherImagesToUpdate[p] := 1
-                }
-                ImageTaskMap.Delete(k)
+                i--
             }
 
             LV_Images.Delete(Row)
 
-            ; Update task counts for other images that were part of deleted merged tasks
-            for oid, val in otherImagesToUpdate {
-                Loop LV_Images.GetCount() {
-                    if (LV_Images.GetText(A_Index, 1) == oid) {
-                        taskCount := 0
-                        for mID, tasks in ImageTaskMap {
-                            if (IsIDInMergedID(oid, mID)) {
-                                taskCount += tasks.Length
-                            }
-                        }
-                        LV_Images.Modify(A_Index, "", , , taskCount)
-                        break
+            ; Update task counts for all remaining images
+            Loop LV_Images.GetCount() {
+                oid := LV_Images.GetText(A_Index, 1)
+                taskCount := 0
+                for t in ImageTaskMap {
+                    if (IsIDInMergedID(oid, t.IDs)) {
+                        taskCount++
                     }
                 }
+                LV_Images.Modify(A_Index, "", , , taskCount)
             }
 
             RefreshTaskTable()
@@ -1795,30 +1763,25 @@ $Del:: {
     else if (FocusedCtrl == LV_Tasks) {
         Row := LV_Tasks.GetNext(0, "Focused")
         if (Row) {
-            targetImgID := LV_Tasks.GetText(Row, 8)
             taskIdx := Integer(LV_Tasks.GetText(Row, 9))
 
-            if ImageTaskMap.Has(targetImgID) {
-                if (taskIdx > 0 && taskIdx <= ImageTaskMap[targetImgID].Length) {
-                    ImageTaskMap[targetImgID].RemoveAt(taskIdx)
+            if (taskIdx > 0 && taskIdx <= ImageTaskMap.Length) {
+                targetIDs := ImageTaskMap[taskIdx].IDs
+                ImageTaskMap.RemoveAt(taskIdx)
 
-                    if (ImageTaskMap[targetImgID].Length == 0)
-                        ImageTaskMap.Delete(targetImgID)
-
-                    ; Update task count in LV_Images for ALL involved images
-                    ids := StrSplit(targetImgID, "+")
-                    for id in ids {
-                        Loop LV_Images.GetCount() {
-                            if (LV_Images.GetText(A_Index, 1) == id) {
-                                taskCount := 0
-                                for mID, tasks in ImageTaskMap {
-                                    if (IsIDInMergedID(id, mID)) {
-                                        taskCount += tasks.Length
-                                    }
+                ; Update task count in LV_Images for ALL involved images
+                ids := StrSplit(targetIDs, ",")
+                for id in ids {
+                    Loop LV_Images.GetCount() {
+                        if (LV_Images.GetText(A_Index, 1) == id) {
+                            taskCount := 0
+                            for t in ImageTaskMap {
+                                if (IsIDInMergedID(id, t.IDs)) {
+                                    taskCount++
                                 }
-                                LV_Images.Modify(A_Index, "", , , taskCount)
-                                break
                             }
+                            LV_Images.Modify(A_Index, "", , , taskCount)
+                            break
                         }
                     }
                 }
@@ -1839,7 +1802,7 @@ IsIDInMergedID(id, mID) {
     smID := String(mID)
     if (smID == sid)
         return true
-    for _, p in StrSplit(smID, "+") {
+    for _, p in StrSplit(smID, ",") {
         if (p == sid)
             return true
     }
