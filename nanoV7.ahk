@@ -1,7 +1,7 @@
 ; paste in browser: data:image/png;base64,{base64imgdata}
 #Requires AutoHotkey v2.0
 #SingleInstance Force
- 
+
 ; Constants {
 ;log in to https://aistudio.google.com/ create new project, then create an API key.
 global API_KEY := EnvGet("API_KEY") ;"USE YER OWN" 
@@ -10,7 +10,7 @@ global OutputDir := A_ScriptDir "\img"
 ;defaut prompt
 global proVal := "everyone stands on top of a large pile of burgers. the burgers deform under load."
 ;defaut negative prompt
-global negVal := "distorted faces, blurry, distorted, low quality, text, watermarks, missing limbs, extra limbs, deformities, floating people or objects, cropped body parts"
+global negVal := "distorted faces, blurry, distortion, low quality, watermarks, missing limbs, extra limbs, deformities, floating people or objects, cropping body parts"
 ; encourage sets up a 'character' or goal for the AI
 global encourageEdt := "You are a professional image-restoration engine. Please apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear and perfectly aligned with the reference without looking plastic. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage."
 global encourageGen := "You are a world-class visual concept artist. Please transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition."
@@ -138,7 +138,7 @@ Btn_ClearBatches.OnEvent("Click", ClearFinishedJobs)
 batBar := MyGui.Add("Progress", "x20 y480 w" . UIW+20 . " h15 cGreen", 0)
 
 Tab.UseTab(3)
-HelpDisp := MyGui.Add("Text", "w" . imgw*2+40 . " h600", "DBnano v" . ver . "`n`nNano Banana Flash and Nano Banana Pro can edit or generate multiple images and do batch.`nImagen is text to image only.`n`nTask flow:`nDrag and drop images on the app or click Generate for a new image.`nSelect the images you want with Shift or CTRL.`nClick Add Task, fill out the right side details (like prompt and ratio)`nChoose Immediate or Batch`nClick Run!`n`nImmdiate mode should make the image in a few minutes.`nBatch mode adds everything to a waitlist, see the second tab for progress.`n`nYou can save/load your prompt settings as CSV.`n`nCosts are based on 2026 data, subject to change")
+HelpDisp := MyGui.Add("Text", "w" . imgw*2+40 . " h600", "DBnano v" . ver . "`n`nNano Banana (Flash, pro and 2) can edit or generate multiple images and do batch.`nImagen is text to image only.`n`nTask flow:`nDrag and drop images on the app or click Generate for a new image.`nSelect the images you want with Shift or CTRL.`nClick Add Task, fill out the right side details (like prompt and ratio)`nChoose Immediate or Batch`nClick Run!`n`nImmediate mode should make the image in a few minutes.`nBatch mode adds everything to a waitlist, see the second tab for progress.`n`nYou can save/load your prompt settings as CSV.`n`nCosts are based on 2026 data, subject to change")
 
 Tab.UseTab()
 global ModelLog := MyGui.Add("Edit", "xm y500 w" . UIW+40 . " r5 +ReadOnly +vModelLog", "")
