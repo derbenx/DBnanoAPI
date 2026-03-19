@@ -1,7 +1,7 @@
 ; paste in browser: data:image/png;base64,{base64imgdata}
 #Requires AutoHotkey v2.0
 #SingleInstance Force
-
+ 
 ; Constants {
 ;log in to https://aistudio.google.com/ create new project, then create an API key.
 global API_KEY := EnvGet("API_KEY") ;"USE YER OWN" 
