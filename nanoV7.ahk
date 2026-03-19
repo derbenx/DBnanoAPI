@@ -27,7 +27,7 @@ global DEBUG := 1 ; 1=on 0=off
 global logPath := A_ScriptDir . "\debug.log"
 global SizeLimit := 300 * 1024 * 1024  ; logs archive at 300MB
 global ratioList := ["Default","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9"]
-global ratioListExt := ["Default","1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","2:1","21:9","4:1","8:1"]
+global ratioListExt := ["Default","1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9","4:1","8:1"]
 ver := "7.0"
 ; } These don't change in program.
 
@@ -1684,7 +1684,7 @@ ValidateButtons() {
 
 GetClosestRatio(w, h) {
     target := w / h
-    ratios := ["1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","2:1","21:9","4:1","8:1"]
+    ratios := ["1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9","4:1","8:1"]
     bestMatch := "1:1"
     minDiff := 999.0
 
