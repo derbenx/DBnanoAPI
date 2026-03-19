@@ -27,7 +27,8 @@ global DEBUG := 1 ; 1=on 0=off
 global logPath := A_ScriptDir . "\debug.log"
 global SizeLimit := 300 * 1024 * 1024  ; logs archive at 300MB
 global ratioList := ["Default","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9"]
-ver := "6.1"
+global ratioListExt := ["Default","1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","2:1","16:9","4:1","8:1","21:9"]
+ver := "7.0"
 ; } These don't change in program.
 
 ; Variables {
@@ -113,7 +114,7 @@ neg := MyGui.Add("Edit", "w290 r3 disabled")
 neg.OnEvent("Change", AutoSaveTask)
 
 MyGui.Add("Text", "w100", "Tier:")
-tier := MyGui.Add("DropDownList", "x+10 disabled", ["Nano Flash 1K","Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Nano 2 1K","Nano 2 2K","Nano 2 4K","Imagen 2K","Imagen Ultra 2K"])
+tier := MyGui.Add("DropDownList", "x+10 disabled", ["Nano Flash 1K","Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Nano 2 1K","Nano 2 2K","Nano 2 4K","Nano 3.1 Flash 1K","Nano 3.1 Flash 2K","Nano 3.1 Flash 4K","Imagen 2K","Imagen Ultra 2K"])
 tier.OnEvent("Change", AutoSaveTask)
 
 MyGui.Add("Text", "x" . imgw*2+50 . " y+10 ", "Aspect Ratio:")
@@ -683,6 +684,16 @@ UpdateButtonStates() {
             ed.Value := task.Prompt
             neg.Value := task.NegativePrompt
             tier.Text := task.Agent . " " . task.Size
+
+            ; Conditional ratio list for 3.1 Flash
+            if InStr(task.Agent, "3.1 Flash") {
+                ratio.Delete()
+                ratio.Add(ratioListExt)
+            } else {
+                ratio.Delete()
+                ratio.Add(ratioList)
+            }
+
             ratio.Text := task.Ratio
             fmt.Text := task.Format
             popCost.Value := "$" . Format("{:.3f}", task.Cost)
@@ -772,7 +783,7 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
-    global MODEL1, MODEL2, MODEL3, MODEL4, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
+    global MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
 
     firstAgent := ""
     isMixed := false
@@ -813,7 +824,9 @@ StartBatch(*) {
         SetLoadingState(true)
 
         try {
-            if InStr(firstAgent, "Flash")
+            if InStr(firstAgent, "3.1 Flash")
+                selectedBatchModel := MODEL5
+            else if InStr(firstAgent, "Flash")
                 selectedBatchModel := MODEL1
             else if InStr(firstAgent, "Imagen") {
                 if (InStr(firstAgent, "Ultra"))
@@ -890,7 +903,7 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
 
     MODEL_ID := ""
     payload := ""
@@ -915,7 +928,9 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
     }
 
 
-    if InStr(agent, "Flash")
+    if InStr(agent, "3.1 Flash")
+        MODEL_ID := MODEL5
+    else if InStr(agent, "Flash")
         MODEL_ID := MODEL1
     else if InStr(agent, "Imagen") {
         if (InStr(agent, "Ultra"))
@@ -1614,6 +1629,22 @@ AutoSaveTask(*) {
     ; Update the task object in the Array
     if localIdx > 0 && localIdx <= ImageTaskMap.Length {
         task := ImageTaskMap[localIdx]
+
+        ; Update ratio list if Tier changes
+        if (task.Agent != agentName) {
+            if InStr(agentName, "3.1 Flash") {
+                ratio.Delete()
+                ratio.Add(ratioListExt)
+            } else {
+                ratio.Delete()
+                ratio.Add(ratioList)
+            }
+            ; Attempt to maintain previous ratio if it still exists
+            try ratio.Text := task.Ratio
+            if (ratio.Text == "")
+                ratio.Value := 1
+        }
+
         task.Prompt := ed.Value
         task.NegativePrompt := neg.Value
         task.Agent := agentName
@@ -1646,7 +1677,7 @@ ValidateButtons() {
 
 GetClosestRatio(w, h) {
     target := w / h
-    ratios := ["9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9"]
+    ratios := ["1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","2:1","16:9","4:1","8:1","21:9"]
     bestMatch := "1:1"
     minDiff := 999.0
 
