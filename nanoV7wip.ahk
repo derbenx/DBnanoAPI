@@ -113,7 +113,7 @@ neg := MyGui.Add("Edit", "w290 r3 disabled")
 neg.OnEvent("Change", AutoSaveTask)
 
 MyGui.Add("Text", "w100", "Tier:")
-tier := MyGui.Add("DropDownList", "x+10 disabled", ["Nano Flash 1K","Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Nano 2 1K","Nano 2 2K","Nano 2 4K","Imagen 2K","Imagen Ultra 2K"])
+tier := MyGui.Add("DropDownList", "x+10 disabled", ["Nano Flash 1K","Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K","Nano 2 1K","Nano 2 2K","Nano 2 4K","Nano 3.1 Flash 1K","Nano 3.1 Flash 2K","Nano 3.1 Flash 4K","Imagen 2K","Imagen Ultra 2K"])
 tier.OnEvent("Change", AutoSaveTask)
 
 MyGui.Add("Text", "x" . imgw*2+50 . " y+10 ", "Aspect Ratio:")
@@ -772,7 +772,7 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
-    global MODEL1, MODEL2, MODEL3, MODEL4, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
+    global MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
 
     firstAgent := ""
     isMixed := false
@@ -813,7 +813,9 @@ StartBatch(*) {
         SetLoadingState(true)
 
         try {
-            if InStr(firstAgent, "Flash")
+            if InStr(firstAgent, "3.1 Flash")
+                selectedBatchModel := MODEL5
+            else if InStr(firstAgent, "Flash")
                 selectedBatchModel := MODEL1
             else if InStr(firstAgent, "Imagen") {
                 if (InStr(firstAgent, "Ultra"))
@@ -890,7 +892,7 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
 
     MODEL_ID := ""
     payload := ""
@@ -915,7 +917,9 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
     }
 
 
-    if InStr(agent, "Flash")
+    if InStr(agent, "3.1 Flash")
+        MODEL_ID := MODEL5
+    else if InStr(agent, "Flash")
         MODEL_ID := MODEL1
     else if InStr(agent, "Imagen") {
         if (InStr(agent, "Ultra"))
