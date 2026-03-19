@@ -27,7 +27,8 @@ global DEBUG := 1 ; 1=on 0=off
 global logPath := A_ScriptDir . "\debug.log"
 global SizeLimit := 300 * 1024 * 1024  ; logs archive at 300MB
 global ratioList := ["Default","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9"]
-ver := "6.1"
+global ratioListExt := ["Default","1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","2:1","21:9","4:1","8:1"]
+ver := "7.0"
 ; } These don't change in program.
 
 ; Variables {
@@ -683,6 +684,17 @@ UpdateButtonStates() {
             ed.Value := task.Prompt
             neg.Value := task.NegativePrompt
             tier.Text := task.Agent . " " . task.Size
+
+            ; Conditional ratio list for 3.1 Flash
+            ;tooltip task.Agent
+            if InStr(task.Agent, "Nano 2") {
+                ratio.Delete()
+                ratio.Add(ratioListExt)
+            } else {
+                ratio.Delete()
+                ratio.Add(ratioList)
+            }
+
             ratio.Text := task.Ratio
             fmt.Text := task.Format
             popCost.Value := "$" . Format("{:.3f}", task.Cost)
@@ -772,7 +784,7 @@ ToggleUI(Enable := true) {
 }
 
 StartBatch(*) {
-    global MODEL1, MODEL2, MODEL3, MODEL4, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
+    global MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, ImageTaskMap, Radio_Batch, LV_Tasks, ModelLog, Prog_Bar, DEBUG
 
     firstAgent := ""
     isMixed := false
@@ -813,7 +825,9 @@ StartBatch(*) {
         SetLoadingState(true)
 
         try {
-            if InStr(firstAgent, "Flash")
+            if InStr(firstAgent, "Nano 2")
+                selectedBatchModel := MODEL5
+            else if InStr(firstAgent, "Flash")
                 selectedBatchModel := MODEL1
             else if InStr(firstAgent, "Imagen") {
                 if (InStr(firstAgent, "Ultra"))
@@ -890,7 +904,7 @@ ProcessNextTask() {
 }
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
-    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+    global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
 
     MODEL_ID := ""
     payload := ""
@@ -915,7 +929,9 @@ RunGeminiTask(fullPath, taskObj, batchIdx) {
     }
 
 
-    if InStr(agent, "Flash")
+    if InStr(agent, "Nano 2")
+        MODEL_ID := MODEL5
+    else if InStr(agent, "Flash")
         MODEL_ID := MODEL1
     else if InStr(agent, "Imagen") {
         if (InStr(agent, "Ultra"))
@@ -1614,6 +1630,22 @@ AutoSaveTask(*) {
     ; Update the task object in the Array
     if localIdx > 0 && localIdx <= ImageTaskMap.Length {
         task := ImageTaskMap[localIdx]
+
+        ; Update ratio list if Tier changes
+        if (task.Agent != agentName) {
+            if InStr(agentName, "Nano 2") {
+                ratio.Delete()
+                ratio.Add(ratioListExt)
+            } else {
+                ratio.Delete()
+                ratio.Add(ratioList)
+            }
+            ; Attempt to maintain previous ratio if it still exists
+            try ratio.Text := task.Ratio
+            if (ratio.Text == "")
+                ratio.Value := 1
+        }
+
         task.Prompt := ed.Value
         task.NegativePrompt := neg.Value
         task.Agent := agentName
@@ -1646,7 +1678,7 @@ ValidateButtons() {
 
 GetClosestRatio(w, h) {
     target := w / h
-    ratios := ["9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9"]
+    ratios := ["1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","2:1","21:9","4:1","8:1"]
     bestMatch := "1:1"
     minDiff := 999.0
 
