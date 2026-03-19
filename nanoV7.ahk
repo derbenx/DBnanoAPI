@@ -50,7 +50,7 @@ global CurlTimers := Map()
 global ActiveStreams := Map()
 ; GUI Controls
 global MyGui, Tab, LV_Images, Pic_Preview, LV_Tasks, Btn_Gen, Btn_Add, TotalCostDisplay, Radio_Immediate, Radio_Batch, Btn_load, Btn_save, Btn_Test, Btn_Run, Prog_Bar
-global ed, neg, tier, ratio, fmt, popCost, batView, Btn_ClearBatches, batBar, ModelLog
+global ed, neg, tier, ratio, fmt, popCost, batView, Btn_ClearBatches, batBar, ModelLog, OutT, OutB, OutL, OutR
 ; }
 
 if !DirExist(OutputDir)
@@ -71,6 +71,10 @@ LV_Images.OnEvent("ItemFocus", ImageListClick)
 LV_Images.OnEvent("DoubleClick", ImageListDoubleClick)
 
 Pic_Preview := MyGui.Add("Pic", "x+10 yp w" . imgw . " h" . imgh . " +Border +Center ", "")
+global OutT := MyGui.Add("Text", "BackgroundLime Hidden", "")
+global OutB := MyGui.Add("Text", "BackgroundLime Hidden", "")
+global OutL := MyGui.Add("Text", "BackgroundLime Hidden", "")
+global OutR := MyGui.Add("Text", "BackgroundLime Hidden", "")
 
 MyGui.SetFont("s10 norm")
 LV_Tasks := MyGui.Add("ListView", "x30 y250 w" . imgw*2+10 . " h140", ["Img", "Agent", "Res", "Ratio", "Status", "Cost ($)", "Prompt", "TaskID", "TaskIdx"])
@@ -713,6 +717,7 @@ UpdateButtonStates() {
         fmt.Enabled := false
         popCost.Value := "$0.00"
     }
+    UpdateRatioOutline()
 }
 
 ImageListClick(LV, RowNum) {
@@ -1664,6 +1669,7 @@ AutoSaveTask(*) {
     }
     ;UpdateButtonStates()
     ValidateButtons()
+    UpdateRatioOutline()
 }
 
 ValidateButtons() {
@@ -2067,4 +2073,49 @@ AreAgentsUniformAndBatchable() {
         }
     }
     return true
+}
+
+UpdateRatioOutline() {
+    global Pic_Preview, ratio, OutT, OutB, OutL, OutR
+
+    if (!ratio.Enabled || ratio.Text == "Default" || ratio.Text == "") {
+        OutT.Visible := false
+        OutB.Visible := false
+        OutL.Visible := false
+        OutR.Visible := false
+        return
+    }
+
+    try {
+        parts := StrSplit(ratio.Text, ":")
+        if (parts.Length != 2)
+            return
+        targetRatio := parts[1] / parts[2]
+    } catch {
+        return
+    }
+
+    Pic_Preview.GetPos(&px, &py, &pw, &ph)
+
+    if (pw/ph > targetRatio) {
+        bh := ph
+        bw := bh * targetRatio
+    } else {
+        bw := pw
+        bh := bw / targetRatio
+    }
+
+    bx := px + (pw - bw) / 2
+    by := py + (ph - bh) / 2
+
+    thick := 2
+    OutT.Move(bx, by, bw, thick)
+    OutB.Move(bx, by + bh - thick, bw, thick)
+    OutL.Move(bx, by, thick, bh)
+    OutR.Move(bx + bw - thick, by, thick, bh)
+
+    OutT.Visible := true
+    OutB.Visible := true
+    OutL.Visible := true
+    OutR.Visible := true
 }
