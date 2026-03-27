@@ -34,16 +34,16 @@ If you start the program and it says curl not found, download curl.exe and place
  Drag and drop images to edit OR click Generate to make an image from scratch.<br>
  Pick an image in the list or choose the GENERATE row.<br>
  Click the "add task" button<br>
- Fill out the popup info. The ratio defaults to the closest of the image. *1<br>
- Choose immediate or batch by radio select. *2<br>
+ Fill out the prompt info. The ratio defaults to the closest of the image. *1<br>
+ Choose immediate or batch via radio select. *2<br>
  Click Run Immediate/Batch button, wait for the magic.<br>
  Check your img folder where you ran the script for new images.<br>
- Then repeat<br>
+ Then repeat as needed<br>
 <br>
 <b>Actions:</b><br>
  Use shift or ctrl to pick several images, then press "add task".<br>
  double click to browse/change the image on the image list.<br>
- double click to edit the task popup on the task list.<br>
+ click to choose which task to edit on the task list.<br>
  Delete key deletes the selected image/task.<br>
  CTRL+r = reload, great for clearing the list.<br>
  You can save and load your prompts to CSV files.<br>
