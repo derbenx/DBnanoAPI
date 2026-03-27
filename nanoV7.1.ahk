@@ -28,7 +28,7 @@ global logPath := A_ScriptDir . "\debug.log"
 global SizeLimit := 300 * 1024 * 1024  ; logs archive at 300MB
 global ratioList := ["Default","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9"]
 global ratioListExt := ["Default","1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9","4:1","8:1"]
-ver := "7.1"
+ver := "7.11"
 ; } These don't change in program.
 
 ; Variables {
@@ -616,7 +616,7 @@ CreateBatchFile(TaskArray, selectedModel) {
      ;   FileDelete(batchPath)
 
     fileObj := FileOpen(batchPath, "w", "UTF-8-RAW")
-    modelPath := "models/" . selectedModel
+    modelPath := "models/" . selectedModel  ;url stuff
 
     for task in TaskArray {
         ; Use the specific SourcePath saved with this task
@@ -625,6 +625,9 @@ CreateBatchFile(TaskArray, selectedModel) {
 
         ; Pass the specific task's path to the payload creator
         payload := CreateJsonPayload(task, currentTaskPath)
+        if (payload=="err") {
+         return
+        }
         payload := Trim(payload)
         payload := RegExReplace(payload, "[\r\n\t]+", " ")
         payload := RegExReplace(payload, "\s+", " ")
@@ -806,9 +809,12 @@ StartBatch(*) {
         MsgBox "No tasks to run!"
         return
     }
+    ;fnf:="xxx"
     if (Radio_Batch.Value) {
         firstSize := ""
         for taskObj in ImageTaskMap {
+            ;ModelLogMsg("[]: " . taskObj.IDs )
+            ;FileExist
             if (firstAgent == "") {
                 firstAgent := taskObj.Agent
                 firstSize := taskObj.Size
@@ -817,7 +823,10 @@ StartBatch(*) {
                 break
             }
         }
-
+        ;if (fnf) {
+        ;  ModelLogMsg("[Error] File not found: " . fnf )
+        ;  return
+        ;}
         if (isMixed) {
             result := MsgBox("Warning: Your batch contains a mix of models (Flash, Pro, or Imagen).`n`nGoogle Batch API requires all tasks in a single job to use the SAME model.")
             return
@@ -850,6 +859,10 @@ StartBatch(*) {
                 selectedBatchModel := MODEL2
 
             batchPath := CreateBatchFile(ImageTaskMap, selectedBatchModel)
+            if (!batchPath) {
+              BatchError("Batch not created!")
+              return
+            }
             LogMessage("BATCH START: File created at " . batchPath)
 
             AsyncUploadBatchFile(batchPath, selectedBatchModel)
@@ -917,6 +930,11 @@ ProcessNextTask() {
 
 RunGeminiTask(fullPath, taskObj, batchIdx) {
     global API_KEY, MODEL1, MODEL2, MODEL3, MODEL4, MODEL5, hurl, useCurl, PendingTasks, CurlTimers, DEBUG, OutputDir, ModelLog
+
+   if (!FileExist(fullPath)) { ;xxx
+     ModelLogMsg("[Error] File not found: " . fullPath )
+     return
+   }
 
     MODEL_ID := ""
     payload := ""
@@ -1177,11 +1195,15 @@ CreateJsonPayload(taskObj, taskImagePath) {
     for path in paths {
         if (path == "")
             continue
-        
-        b64 := FileToBase64(path)
-        imageParts .= ', {"inline_data": {"mime_type": "' . mime . '", "data": "' . b64 . '"}}'
+        if (FileExist(path)) {
+         b64 := FileToBase64(path)
+         imageParts .= ', {"inline_data": {"mime_type": "' . mime . '", "data": "' . b64 . '"}}'
+        } else {
+         ModelLogMsg("[Error] File not found:" . path)
+         return "err"
+        }
     }
-
+    ModelLogMsg("[Okay] All files found:") ;xxx
     payload := '{'
         . '"contents": [{"parts": ['
             . '{"text": "' . cleanPrompt . '"}'
