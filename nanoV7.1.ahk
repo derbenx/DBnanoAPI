@@ -28,7 +28,7 @@ global logPath := A_ScriptDir . "\debug.log"
 global SizeLimit := 300 * 1024 * 1024  ; logs archive at 300MB
 global ratioList := ["Default","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9"]
 global ratioListExt := ["Default","1:8","1:4","9:16","2:3","3:4","4:5","1:1","5:4","4:3","3:2","16:9","21:9","4:1","8:1"]
-ver := "7.11"
+ver := "7.12"
 ; } These don't change in program.
 
 ; Variables {
@@ -71,12 +71,12 @@ LV_Images.OnEvent("ItemFocus", ImageListClick)
 LV_Images.OnEvent("DoubleClick", ImageListDoubleClick)
 
 Pic_Preview := MyGui.Add("Pic", "x+10 yp w" . imgw . " h" . imgh . " +Border +Center ", "")
+;DllCall("uxtheme\SetWindowTheme", "Ptr", OutT.Hwnd, "Str", "", "Str", "")
+; -E0x20000 Vertical -Border
 global OutT := MyGui.Add("Progress", "BackgroundGreen cRed hidden", 100)
-DllCall("uxtheme\SetWindowTheme", "Ptr", OutT.Hwnd, "Str", "", "Str", "")
 global OutB := MyGui.Add("Progress", "BackgroundGreen cRed hidden", 100)
-DllCall("uxtheme\SetWindowTheme", "Ptr", OutT.Hwnd, "Str", "", "Str", "")
-global OutL := MyGui.Add("Progress", "BackgroundGreen cRed hidden -E0x20000 Vertical -Border -Theme", 100)
-global OutR := MyGui.Add("Progress", "BackgroundGreen cRed hidden -E0x20000 Vertical -Border", 100)
+global OutL := MyGui.Add("Progress", "BackgroundGreen cRed hidden", 100)
+global OutR := MyGui.Add("Progress", "BackgroundGreen cRed hidden", 100) 
 global outsz:=1
 SetTimer(UpdateRatioBars, 100)
 
@@ -164,6 +164,8 @@ if (useCurl) {
 } else {
  ModelLogMsg("Using standard mode. The GUI will freeze when doing HTTPS.")
 }
+ModelLogMsg("To start, drag and drop an image in the app or click 'New Image'.")
+ModelLogMsg("Double click the image entry to change it.")
 
 CreateNewTask(*) {
     row := 0
@@ -648,6 +650,7 @@ AddNullImage(*) {
     ImageListClick(LV_Images, LV_Images.GetCount())
     UpdateTotalDisplay()
     UpdateButtonStates()
+    ModelLogMsg("Great, now add a task for the selected generated image!")
 }
 
 Gui_DropFiles(GuiObj, GuiCtrlObj, FileArray, X, Y) {
@@ -666,6 +669,7 @@ Gui_DropFiles(GuiObj, GuiCtrlObj, FileArray, X, Y) {
     LV_Images.ModifyCol()
     UpdateTotalDisplay()
     UpdateButtonStates()
+    ModelLogMsg("Great, now add a task for the selected images!")
 }
 
 UpdateButtonStates() {
