@@ -35,7 +35,7 @@ func main() {
 
 	// Shared Log
 	state.ModelLog = widget.NewMultiLineEntry()
-	state.ModelLog.SetReadOnly(true)
+	state.ModelLog.ReadOnly = true
 	state.ModelLog.SetPlaceHolder("To start, drag and drop an image or click 'New Image'...")
 
 	// Tabs
