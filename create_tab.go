@@ -13,6 +13,8 @@ import (
 )
 
 func (s *AppState) makeCreateTab() fyne.CanvasObject {
+	var selectedImgRow int = -1
+
 	// Left side: Image List
 	imageList := widget.NewTable(
 		func() (int, int) { return len(s.Images) + 1, 5 },
@@ -51,6 +53,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	preview.SetMinSize(fyne.NewSize(300, 200))
 
 	imageList.OnSelected = func(id widget.TableCellID) {
+		selectedImgRow = id.Row
 		if id.Row > 0 {
 			img := s.Images[id.Row-1]
 			if img.FullPath != "<GENERATE>" {
@@ -112,10 +115,20 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	addTaskBtn := widget.NewButton("Add Task", func() {
 		selectedImages := ""
 		sourcePaths := ""
-		// In a real Fyne app, we'd track selection. For now, take first if any.
-		if len(s.Images) > 0 {
+
+		if selectedImgRow > 0 && selectedImgRow <= len(s.Images) {
+			img := s.Images[selectedImgRow-1]
+			selectedImages = img.ID
+			sourcePaths = img.FullPath
+		} else if len(s.Images) > 0 {
+			// Fallback to first image if nothing selected
 			selectedImages = s.Images[0].ID
 			sourcePaths = s.Images[0].FullPath
+		}
+
+		if sourcePaths == "" {
+			s.Log("Error: No image selected to add task.")
+			return
 		}
 
 		s.Tasks = append(s.Tasks, &TaskInfo{

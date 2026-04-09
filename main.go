@@ -35,7 +35,7 @@ func main() {
 
 	// Shared Log
 	state.ModelLog = widget.NewMultiLineEntry()
-	state.ModelLog.ReadOnly = true
+	state.ModelLog.Disable()
 	state.ModelLog.SetPlaceHolder("To start, drag and drop an image or click 'New Image'...")
 
 	// Tabs
@@ -66,5 +66,4 @@ func makeHelpTab(state *AppState) fyne.CanvasObject {
 func (s *AppState) Log(msg string) {
 	timestamp := time.Now().Format("15:04:05")
 	s.ModelLog.SetText(s.ModelLog.Text + "\n[" + timestamp + "] " + msg)
-	s.ModelLog.CursorRow = len(s.ModelLog.Text) // Simple scroll to bottom
 }

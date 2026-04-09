@@ -16,9 +16,9 @@ import (
 
 type GeminiRequest struct {
 	Contents          []Content         `json:"contents"`
-	SystemInstruction *Content          `json:"system_instruction,omitempty"`
-	SafetySettings    []SafetySetting   `json:"safety_settings"`
-	GenerationConfig  *GenerationConfig `json:"generation_config,omitempty"`
+	SystemInstruction *Content          `json:"systemInstruction,omitempty"`
+	SafetySettings    []SafetySetting   `json:"safetySettings"`
+	GenerationConfig  *GenerationConfig `json:"generationConfig,omitempty"`
 }
 
 type Content struct {
@@ -27,23 +27,23 @@ type Content struct {
 
 type Part struct {
 	Text       string      `json:"text,omitempty"`
-	InlineData *InlineData `json:"inline_data,omitempty"`
+	InlineData *InlineData `json:"inlineData,omitempty"`
 }
 
 type InlineData struct {
-	MimeType string `json:"mime_type"`
+	MimeType string `json:"mimeType"`
 	Data     string `json:"data"`
 }
 
 type GenerationConfig struct {
-	CandidateCount     int          `json:"candidate_count"`
-	ResponseModalities []string     `json:"response_modalities"`
-	ImageConfig        *ImageConfig `json:"image_config,omitempty"`
+	CandidateCount     int          `json:"candidateCount"`
+	ResponseModalities []string     `json:"responseModalities"`
+	ImageConfig        *ImageConfig `json:"imageConfig,omitempty"`
 }
 
 type ImageConfig struct {
-	AspectRatio string `json:"aspect_ratio,omitempty"`
-	ImageSize   string `json:"image_size,omitempty"`
+	AspectRatio string `json:"aspectRatio,omitempty"`
+	ImageSize   string `json:"imageSize,omitempty"`
 }
 
 func (s *AppState) RunTask(task *TaskInfo) error {
