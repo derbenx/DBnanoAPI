@@ -86,7 +86,8 @@ func (s *AppState) RunTask(task *TaskInfo) error {
 }
 
 func (s *AppState) BuildPayload(task *TaskInfo) ([]byte, error) {
-	parts := []Part{{Text: task.Prompt}}
+	fullPrompt := fmt.Sprintf("USER DIRECTIVE: %s. Aspect Ratio: %s. Avoid: %s", task.Prompt, task.Ratio, task.NegativePrompt)
+	parts := []Part{{Text: fullPrompt}}
 	encourage := s.Config.EncourageGen
 
 	if task.SourcePath != "" && task.SourcePath != "<GENERATE>" {
@@ -160,6 +161,35 @@ func (s *AppState) HandleError(body []byte, status int) error {
 	}
 
 	return fmt.Errorf("HTTP Error %d: %s", status, bodyStr)
+}
+
+func (s *AppState) TestAPI() error {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", s.Config.APIKey)
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != 200 {
+		return s.HandleError(body, resp.StatusCode)
+	}
+
+	var modelsResp struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(body, &modelsResp); err != nil {
+		return err
+	}
+
+	s.Log("Supported Models:")
+	for _, m := range modelsResp.Models {
+		s.Log(" - " + m.Name)
+	}
+	return nil
 }
 
 func (s *AppState) ProcessResponse(body []byte, task *TaskInfo) error {

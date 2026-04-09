@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -104,7 +105,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	// Right side: Task Editor
 	promptEntry := widget.NewMultiLineEntry()
+	promptEntry.SetText(s.Config.DefaultPrompt)
+
 	negPromptEntry := widget.NewMultiLineEntry()
+	negPromptEntry.SetText(s.Config.DefaultNegPrompt)
 
 	agentOptions := []string{
 		"Nano Flash 1K",
@@ -162,8 +166,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	runBtn := widget.NewButton("RUN TASKS", func() {
 		go func() {
-			for _, task := range s.Tasks {
-				if task.Status != "Pending" {
+			for i, task := range s.Tasks {
+				if task.Status != "Pending" && task.Status != "Failed" {
 					continue
 				}
 
@@ -175,12 +179,13 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 						SubmittedAt: time.Now(),
 						Progress:    "0%",
 					})
-					s.Log(fmt.Sprintf("Task %d submitted as Batch Job.", task.ID))
+					s.Log(fmt.Sprintf("[%d] Task submitted as Batch Job.", i+1))
 					taskList.Refresh()
 					continue
 				}
 
 				task.Status = "Running"
+				s.Log(fmt.Sprintf("[%d] Running %s...", i+1, task.Agent))
 				taskList.Refresh()
 				err := s.RunTask(task)
 				if err != nil {

@@ -10,8 +10,11 @@ type SafetySetting struct {
 type Config struct {
 	APIKey         string          `json:"api_key"`
 	OutputDir      string          `json:"output_dir"`
+	DefaultPrompt  string          `json:"default_prompt"`
+	DefaultNegPrompt string        `json:"default_neg_prompt"`
 	EncourageEdt   string          `json:"encourage_edt"`
 	EncourageGen   string          `json:"encourage_gen"`
+	Debug          bool            `json:"debug"`
 	SafetySettings []SafetySetting `json:"safety_settings"`
 }
 
