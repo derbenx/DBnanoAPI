@@ -47,15 +47,10 @@ type ImageConfig struct {
 }
 
 var ModelMapping = map[string]string{
-	"Nano Flash 1K":   "gemini-2.5-flash-image",
-	"Nano Pro 1K":     "gemini-3-pro-image-preview",
-	"Nano Pro 2K":     "gemini-3-pro-image-preview",
-	"Nano Pro 4K":     "gemini-3-pro-image-preview",
-	"Nano 2 1K":       "gemini-3.1-flash-image-preview",
-	"Nano 2 2K":       "gemini-3.1-flash-image-preview",
-	"Nano 2 4K":       "gemini-3.1-flash-image-preview",
-	"Imagen 2K":       "imagen-4.0-generate-001",
-	"Imagen Ultra 2K": "imagen-4.0-ultra-generate-001",
+	"Nano Flash": "gemini-2.5-flash-image",
+	"Nano Pro":   "gemini-3-pro-image-preview",
+	"Nano 2":     "gemini-3.1-flash-image-preview",
+	"Imagen":     "imagen-4.0-generate-001",
 }
 
 func (s *AppState) RunTask(task *TaskInfo) error {
@@ -185,9 +180,17 @@ func (s *AppState) TestAPI() error {
 		return err
 	}
 
-	s.Log("Supported Models:")
-	for _, m := range modelsResp.Models {
-		s.Log(" - " + m.Name)
+	s.Log(fmt.Sprintf("Connection successful. Found %d models.", len(modelsResp.Models)))
+	// Log first 10 models to avoid log spamming if there are many
+	limit := 10
+	if len(modelsResp.Models) < limit {
+		limit = len(modelsResp.Models)
+	}
+	for i := 0; i < limit; i++ {
+		s.Log(" - " + modelsResp.Models[i].Name)
+	}
+	if len(modelsResp.Models) > limit {
+		s.Log(fmt.Sprintf(" ... and %d more.", len(modelsResp.Models)-limit))
 	}
 	return nil
 }

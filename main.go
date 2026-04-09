@@ -16,6 +16,9 @@ type AppState struct {
 	Tasks      []*TaskInfo
 	BatchJobs  []*BatchJob
 	ModelLog   *widget.Label
+	LogScroll  *container.Scroll
+
+	DeleteHandler func()
 }
 
 func main() {
@@ -52,9 +55,22 @@ func main() {
 
 	logScroll := container.NewVScroll(state.ModelLog)
 	logScroll.SetMinSize(fyne.NewSize(0, 150))
+	state.LogScroll = logScroll
 
 	content := container.NewBorder(nil, logScroll, nil, nil, tabs)
 	w.SetContent(content)
+
+	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
+		if k.Name == fyne.KeyDelete {
+			// Don't delete items if user is typing in a text field
+			if _, ok := w.Canvas().Focused().(*widget.Entry); ok {
+				return
+			}
+			if state.DeleteHandler != nil {
+				state.DeleteHandler()
+			}
+		}
+	})
 
 	w.ShowAndRun()
 }
@@ -67,5 +83,10 @@ func makeHelpTab(state *AppState) fyne.CanvasObject {
 
 func (s *AppState) Log(msg string) {
 	timestamp := time.Now().Format("15:04:05")
-	s.ModelLog.SetText(s.ModelLog.Text + "\n[" + timestamp + "] " + msg)
+	fyne.Do(func() {
+		s.ModelLog.SetText(s.ModelLog.Text + "\n[" + timestamp + "] " + msg)
+		if s.LogScroll != nil {
+			s.LogScroll.ScrollToBottom()
+		}
+	})
 }

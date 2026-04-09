@@ -15,6 +15,7 @@ import (
 
 func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var selectedImgRow int = -1
+	var selectedTaskRow int = -1
 
 	// Left side: Image List
 	imageList := widget.NewTable(
@@ -42,6 +43,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			}
 		},
 	)
+
+	taskList.OnSelected = func(id widget.TableCellID) {
+		selectedTaskRow = id.Row
+	}
 	imageList.SetColumnWidth(0, 30)
 	imageList.SetColumnWidth(1, 50)
 	imageList.SetColumnWidth(2, 50)
@@ -65,7 +70,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	}
 
 	// Task List (Bottom)
-	taskList := widget.NewTable(
+	var taskList *widget.Table
+	taskList = widget.NewTable(
 		func() (int, int) { return len(s.Tasks) + 1, 6 },
 		func() fyne.CanvasObject { return widget.NewLabel("Header") },
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
@@ -106,25 +112,40 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	// Right side: Task Editor
 	promptEntry := widget.NewMultiLineEntry()
 	promptEntry.SetText(s.Config.DefaultPrompt)
+	promptEntry.Wrapping = fyne.TextWrapWord
 
 	negPromptEntry := widget.NewMultiLineEntry()
 	negPromptEntry.SetText(s.Config.DefaultNegPrompt)
+	negPromptEntry.Wrapping = fyne.TextWrapWord
 
-	agentOptions := []string{
-		"Nano Flash 1K",
-		"Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K",
-		"Nano 2 1K", "Nano 2 2K", "Nano 2 4K",
-		"Imagen 2K", "Imagen Ultra 2K",
-	}
-	agentSelect := widget.NewSelect(agentOptions, func(string) {})
-	agentSelect.SetSelected("Nano Flash 1K")
+	agentOptions := []string{"Nano Flash", "Nano Pro", "Nano 2", "Imagen"}
+	agentSelect := widget.NewSelect(agentOptions, nil)
 
-	sizeSelect := widget.NewSelect([]string{"1K", "2K", "4K"}, func(string) {})
+	sizeSelect := widget.NewSelect([]string{"1K", "2K", "4K"}, nil)
 	sizeSelect.SetSelected("1K")
 
-	ratios := []string{"Default", "1:8", "1:4", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9", "4:1", "8:1"}
-	ratioSelect := widget.NewSelect(ratios, func(string) {})
+	ratioOptions := []string{"Default", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9"}
+	ratioOptionsExt := []string{"Default", "1:8", "1:4", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9", "4:1", "8:1"}
+	ratioSelect := widget.NewSelect(ratioOptions, nil)
 	ratioSelect.SetSelected("1:1")
+
+	agentSelect.OnChanged = func(s string) {
+		if s == "Nano 2" {
+			ratioSelect.Options = ratioOptionsExt
+		} else {
+			ratioSelect.Options = ratioOptions
+		}
+		ratioSelect.Refresh()
+
+		if s == "Imagen" {
+			sizeSelect.Options = []string{"2K"}
+			sizeSelect.SetSelected("2K")
+		} else {
+			sizeSelect.Options = []string{"1K", "2K", "4K"}
+		}
+		sizeSelect.Refresh()
+	}
+	agentSelect.SetSelected("Nano Flash")
 
 	modeSelect := widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(string) {})
 	modeSelect.SetSelected("Immediate")
@@ -172,34 +193,40 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				}
 
 				if task.Mode == "Batch" {
-					task.Status = "Submitted"
-					s.BatchJobs = append(s.BatchJobs, &BatchJob{
-						JobID:       fmt.Sprintf("Job_%d", task.ID),
-						Status:      "Submitted",
-						SubmittedAt: time.Now(),
-						Progress:    "0%",
+					fyne.Do(func() {
+						task.Status = "Submitted"
+						s.BatchJobs = append(s.BatchJobs, &BatchJob{
+							JobID:       fmt.Sprintf("Job_%d", task.ID),
+							Status:      "Submitted",
+							SubmittedAt: time.Now(),
+							Progress:    "0%",
+						})
+						taskList.Refresh()
 					})
 					s.Log(fmt.Sprintf("[%d] Task submitted as Batch Job.", i+1))
-					taskList.Refresh()
 					continue
 				}
 
-				task.Status = "Running"
+				fyne.Do(func() {
+					task.Status = "Running"
+					taskList.Refresh()
+				})
 				s.Log(fmt.Sprintf("[%d] Running %s...", i+1, task.Agent))
-				taskList.Refresh()
 				err := s.RunTask(task)
-				if err != nil {
-					task.Status = "Failed"
-					s.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
-				} else {
-					task.Status = "Success"
-				}
-				taskList.Refresh()
+				fyne.Do(func() {
+					if err != nil {
+						task.Status = "Failed"
+						s.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
+					} else {
+						task.Status = "Success"
+					}
+					taskList.Refresh()
+				})
 			}
 		}()
 	})
 
-	btnBox := container.NewHBox(newImgBtn, addTaskBtn, runBtn)
+	btnBox := container.NewHBox(newImgBtn, addTaskBtn, layout.NewSpacer(), widget.NewLabel("Mode:"), modeSelect, runBtn)
 
 	taskEditor := widget.NewForm(
 		widget.NewFormItem("Positive Prompt", promptEntry),
@@ -207,13 +234,29 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		widget.NewFormItem("Agent", agentSelect),
 		widget.NewFormItem("Size", sizeSelect),
 		widget.NewFormItem("Aspect Ratio", ratioSelect),
-		widget.NewFormItem("Mode", modeSelect),
 	)
 
 	// Layout
 	topHalf := container.New(layout.NewGridLayout(2), imageList, preview)
 	middle := container.NewVBox(btnBox, taskList)
 	right := container.NewVScroll(taskEditor)
+
+	s.DeleteHandler = func() {
+		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
+			s.Tasks = append(s.Tasks[:selectedTaskRow-1], s.Tasks[selectedTaskRow:]...)
+			selectedTaskRow = -1
+			taskList.Refresh()
+			s.Log("Task deleted.")
+			return
+		}
+		if selectedImgRow > 0 && selectedImgRow <= len(s.Images) {
+			s.Images = append(s.Images[:selectedImgRow-1], s.Images[selectedImgRow:]...)
+			selectedImgRow = -1
+			imageList.Refresh()
+			s.Log("Image deleted.")
+			return
+		}
+	}
 
 	mainSplit := container.NewHSplit(
 		container.NewVSplit(topHalf, middle),
