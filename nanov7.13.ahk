@@ -607,11 +607,7 @@ BatchError(msg) {
 
     SetLoadingState(false)
     Prog_Bar.Value := 0
-
-    if (!InspectApiResponse(msg, "Batch")) {
-        ModelLogMsg("Batch Failed: " . msg)
-    }
-
+    ModelLogMsg("Batch Failed: " . msg)
     ToggleUI(true)
 }
 
@@ -1070,18 +1066,17 @@ if (whr.Status == 200) {
         if (batchIdx > 0)
             LV_Tasks.Modify(batchIdx, "", , , , , "Success")
     } else {
-        if (!InspectApiResponse(responseText, batchIdx)) {
-            ModelLogMsg("Task " . batchIdx . " FAILED: No image data returned.")
+        idxLog := "Task " . batchIdx
+        if RegExMatch(responseText, 'i)"message":\s*"([^"]+)"', &m) {
+            ModelLogMsg("[ERROR]: " . idxLog . " - " . m[1])
+        } else if RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m) {
+            ModelLogMsg("[SAFETY]: " . idxLog . " - Reason: " . m[1])
+        } else {
+            ModelLogMsg("[FAILED]: " . idxLog . " - No image data returned.")
         }
         if (batchIdx > 0)
             LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
     }
-} else {
-    if (!InspectApiResponse(whr.ResponseText, batchIdx)) {
-        ModelLogMsg("Task " . batchIdx . " HTTP Error " . whr.Status)
-    }
-    if (batchIdx > 0)
-        LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
 }
     } catch Error as e {
         if (DEBUG)
@@ -1422,11 +1417,8 @@ SyncCheckBatchStatus(url, jobID, targetRow) {
         whr.Send()
         if (whr.Status == 200)
             HandleBatchStatus(whr.ResponseText, jobID, targetRow)
-        else {
-            if (!InspectApiResponse(whr.ResponseText, "StatusCheck")) {
-                ModelLogMsg("[Error] WinHttp status " . whr.Status . " for " . jobID)
-            }
-        }
+        else
+            ModelLogMsg("[Error] WinHttp status " . whr.Status . " for " . jobID)
     } catch Error as e {
         ModelLogMsg("[Error] WinHttp status check failed: " . e.Message)
     }
@@ -1452,10 +1444,9 @@ HandleBatchStatus(responseText, jobID, targetRow) {
     state := JSON_Get(responseText, "state")
     ModelLogMsg(jobID . " = " . state)
     if (state == "") {
-        if InStr(responseText, '"error"') {
+        if InStr(responseText, '"error"')
             state := "ERROR"
-            InspectApiResponse(responseText, "BatchStatus")
-        } else
+        else
             state := "UNKNOWN"
 
         LogMessage("Batch Job " . jobID . " returned no state. Full Response: " . responseText)
@@ -1584,10 +1575,8 @@ HandleBatchDownload(rawResponse, targetRow) {
 
         if (foundInLine == 0) {
              LogMessage("No images found for ID: " . fn)
-             if (InStr(line, '"error"')) {
+             if (InStr(line, '"error"'))
                  LogMessage("Line " . A_Index . " error: " . line)
-                 InspectApiResponse(line, "BatchLine_" . A_Index)
-             }
         }
     }
 
@@ -1603,16 +1592,7 @@ HandleBatchDownload(rawResponse, targetRow) {
     CleanupJobsFile()
 }
 JSON_Get(jsonStr, key) {
-    ; Extract the last part of a dot-notated key
-    realKey := key
-    if InStr(key, ".") {
-        parts := StrSplit(key, ".")
-        realKey := parts[parts.Length]
-    }
-
-    if RegExMatch(jsonStr, '"' . realKey . '":\s*"([^"]*)"', &match)
-        return match[1]
-    if RegExMatch(jsonStr, '"' . realKey . '":\s*(-?\d+\.?\d*)', &match)
+    if RegExMatch(jsonStr, '"' . key . '":\s*"([^"]+)"', &match)
         return match[1]
     return ""
 }
@@ -1635,16 +1615,16 @@ TestAPIConnection(*) {
     ModelLogMsg("Fetching models...")
     Prog_Bar.Value := 10
 
-    responseText := ""
-    status := 0
     try {
         url := "https://generativelanguage.googleapis.com/v1beta/models?key=" . API_KEY
+        responseText := ""
+        status := 0
         if (useCurl) {
             resFile := A_ScriptDir . "\gemini_models_" . A_TickCount . ".json"
             curlCmd := 'curl -s "' . url . '" -o "' . resFile . '"'
             Run(curlCmd, , "Hide", &pid)
-            while ProcessExist(pid)
-                Sleep(50)
+        while ProcessExist(pid)
+            Sleep(50)
             if FileExist(resFile) {
                 responseText := FileRead(resFile)
                 FileDelete(resFile)
@@ -1660,28 +1640,19 @@ TestAPIConnection(*) {
 
         if (status == 200) {
             Prog_Bar.Value := 100
-
-            if (InspectApiResponse(responseText, "TestAPI")) {
-                ; Already logged error
-            } else {
-                modelList := ""
-                pos := 1
-                while (pos := RegExMatch(responseText, "`"name`":\s*`"models/([^`"]+)`"", &match, pos + 1)) {
-                    modelList .= match[1] . "`r`n"
-                }
-
-                if (modelList != "") {
-                    ModelLogMsg(modelList)
-                    LogMessage("--- SUPPORTED MODELS ---`n" . modelList . "`n")
-                } else {
-                    ModelLogMsg("Connected successfully, but no models were returned.")
-                }
+            modelList := ""
+            pos := 1
+            while (pos := RegExMatch(responseText, "`"name`":\s*`"models/([^`"]+)`"", &match, pos + 1)) {
+                modelList .= match[1] . "`r`n"
             }
+
+            ModelLogMsg(modelList)
+
+            LogMessage("--- SUPPORTED MODELS ---`n" . modelList . "`n")
+
         } else {
             ; Handle errors using your existing catch logic
-            if (!InspectApiResponse(responseText, "TestAPI")) {
-                ModelLogMsg("Status " . status . ": " . responseText)
-            }
+            ModelLogMsg("Status " . whr.Status . ": " . whr.ResponseText)
         }
     } catch Error as e {
         Prog_Bar.Value := 0 ;
@@ -1981,6 +1952,8 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
             responseText := FileRead(responseFile)
             FileDelete(responseFile)
         }
+        checkx := InspectApiResponse(responseText,batchIdx
+        )
         
         ;idxLog := (batchIdx < 0) ? "Upscale " . Abs(batchIdx) : "Task " . batchIdx
         idxLog := "Task " . batchIdx
@@ -2046,7 +2019,9 @@ ProcessCurlResult(pid, responseFile, payloadFile, batchIdx, nameNoExt) {
                         LV_Tasks.Modify(batchIdx, "", , , , , "Failed")
                 }
             } else {
-                if (!InspectApiResponse(responseText, batchIdx)) {
+                if (RegExMatch(responseText, 'i)"finishReason":\s*"([^"]+)"', &m)) {
+                    ModelLogMsg("Curl task " . batchIdx . " failed. Reason: " . m[1])
+                } else {
                     ModelLogMsg("Curl task " . batchIdx . " returned no image data. See debug.log.")
                 }
                 if (batchIdx > 0)
@@ -2101,54 +2076,17 @@ CleanupJobsFile() {
     }
 }
 
-InspectApiResponse(jsonString, batchIdx) {
-    if (jsonString == "")
-        return false
-
-    ; Handle HTML error pages
-    if (InStr(jsonString, "<html") || InStr(jsonString, "<body")) {
-        msg := "HTML Error"
-        if RegExMatch(jsonString, "si)<h1>(.*?)</h1>", &m)
-            msg := m[1]
-        if RegExMatch(jsonString, "si)<p>(.*?)</p>", &m)
-            msg .= ": " . m[1]
-
-        ; Strip HTML tags from msg
-        msg := RegExReplace(msg, "<[^>]+>", "")
-        ModelLogMsg("Task " . batchIdx . " Error: " . msg)
-        return true
-    }
-
-    foundError := false
+InspectApiResponse(jsonString,batchIdx) {
     if (InStr(jsonString, '"error"')) {
-        code := JSON_Get(jsonString, "code")
-        msg := JSON_Get(jsonString, "message")
-        status := JSON_Get(jsonString, "status")
-
-        errReport := "Task " . batchIdx . " ERROR: " . code
-        if (status != "")
-            errReport .= " (" . status . ")"
-        if (msg != "")
-            errReport .= " - " . msg
-        else
-            errReport .= " - Unknown Error"
-
-        ModelLogMsg(errReport)
-        foundError := true
+        code := JSON_Get(jsonString, "error.code")
+        msg := JSON_Get(jsonString, "error.message")
+        ModelLogMsg(batchIdx . " ERROR:" . code . " - " . msg)
     }
 
     if (InStr(jsonString, '"finishReason":"IMAGE_SAFETY"')) {
-       ModelLogMsg("Task " . batchIdx . " IMAGE_SAFETY: Nano generated an image that tripped a safety policy! Try another image or rephrasing the prompt.")
-       foundError := true
-    } else if (RegExMatch(jsonString, 'i)"finishReason":\s*"([^"]+)"', &m)) {
-       ; Only log if it's not SUCCESS/STOP (though Gemini usually just omits it if successful)
-       if (m[1] != "STOP" && m[1] != "SUCCESS") {
-           ModelLogMsg("Task " . batchIdx . " Finish Reason: " . m[1])
-           foundError := true
-       }
+       ModelLogMsg(batchIdx . " IMAGE_SAFETY: Nano generated an image that tripped a safety policy! Try another image or rephrasing the prompt.")
     }
-
-    return foundError
+    return
 }
 
 AreAgentsUniformAndBatchable() {
