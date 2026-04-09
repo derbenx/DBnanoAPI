@@ -17,8 +17,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var selectedImgRow int = -1
 	var selectedTaskRow int = -1
 
+	// Pre-declare tables so they can be referenced in each other's callbacks if needed
+	var imageList *widget.Table
+	var taskList *widget.Table
+
 	// Left side: Image List
-	imageList := widget.NewTable(
+	imageList = widget.NewTable(
 		func() (int, int) { return len(s.Images) + 1, 5 },
 		func() fyne.CanvasObject { return widget.NewLabel("Header") },
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
@@ -44,9 +48,6 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		},
 	)
 
-	taskList.OnSelected = func(id widget.TableCellID) {
-		selectedTaskRow = id.Row
-	}
 	imageList.SetColumnWidth(0, 30)
 	imageList.SetColumnWidth(1, 50)
 	imageList.SetColumnWidth(2, 50)
@@ -70,7 +71,6 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	}
 
 	// Task List (Bottom)
-	var taskList *widget.Table
 	taskList = widget.NewTable(
 		func() (int, int) { return len(s.Tasks) + 1, 6 },
 		func() fyne.CanvasObject { return widget.NewLabel("Header") },
@@ -98,6 +98,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			}
 		},
 	)
+
+	taskList.OnSelected = func(id widget.TableCellID) {
+		selectedTaskRow = id.Row
+	}
 
 	// Buttons
 	newImgBtn := widget.NewButton("New Image", func() {
