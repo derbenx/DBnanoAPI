@@ -105,12 +105,26 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	// Right side: Task Editor
 	promptEntry := widget.NewMultiLineEntry()
 	negPromptEntry := widget.NewMultiLineEntry()
-	agentSelect := widget.NewSelect([]string{"gemini-2.5-flash-image", "gemini-3-pro-image-preview", "imagen-4.0-generate-001"}, func(string) {})
-	agentSelect.SetSelected("gemini-2.5-flash-image")
+
+	agentOptions := []string{
+		"Nano Flash 1K",
+		"Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K",
+		"Nano 2 1K", "Nano 2 2K", "Nano 2 4K",
+		"Imagen 2K", "Imagen Ultra 2K",
+	}
+	agentSelect := widget.NewSelect(agentOptions, func(string) {})
+	agentSelect.SetSelected("Nano Flash 1K")
+
 	sizeSelect := widget.NewSelect([]string{"1K", "2K", "4K"}, func(string) {})
 	sizeSelect.SetSelected("1K")
-	ratioSelect := widget.NewSelect([]string{"1:1", "16:9", "9:16"}, func(string) {})
+
+	ratios := []string{"Default", "1:8", "1:4", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9", "4:1", "8:1"}
+	ratioSelect := widget.NewSelect(ratios, func(string) {})
 	ratioSelect.SetSelected("1:1")
+
+	modeSelect := widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(string) {})
+	modeSelect.SetSelected("Immediate")
+	modeSelect.Horizontal = true
 
 	addTaskBtn := widget.NewButton("Add Task", func() {
 		selectedImages := ""
@@ -140,17 +154,32 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			Status:         "Pending",
 			Prompt:         promptEntry.Text,
 			NegativePrompt: negPromptEntry.Text,
+			Mode:           modeSelect.Selected,
 			SourcePath:     sourcePaths,
 		})
 		taskList.Refresh()
 	})
 
-	runBtn := widget.NewButton("RUN IMMEDIATE", func() {
+	runBtn := widget.NewButton("RUN TASKS", func() {
 		go func() {
 			for _, task := range s.Tasks {
 				if task.Status != "Pending" {
 					continue
 				}
+
+				if task.Mode == "Batch" {
+					task.Status = "Submitted"
+					s.BatchJobs = append(s.BatchJobs, &BatchJob{
+						JobID:       fmt.Sprintf("Job_%d", task.ID),
+						Status:      "Submitted",
+						SubmittedAt: time.Now(),
+						Progress:    "0%",
+					})
+					s.Log(fmt.Sprintf("Task %d submitted as Batch Job.", task.ID))
+					taskList.Refresh()
+					continue
+				}
+
 				task.Status = "Running"
 				taskList.Refresh()
 				err := s.RunTask(task)
@@ -170,9 +199,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	taskEditor := widget.NewForm(
 		widget.NewFormItem("Positive Prompt", promptEntry),
 		widget.NewFormItem("Negative Prompt", negPromptEntry),
-		widget.NewFormItem("Agent (Model ID)", agentSelect),
+		widget.NewFormItem("Agent", agentSelect),
 		widget.NewFormItem("Size", sizeSelect),
 		widget.NewFormItem("Aspect Ratio", ratioSelect),
+		widget.NewFormItem("Mode", modeSelect),
 	)
 
 	// Layout

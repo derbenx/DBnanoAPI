@@ -46,8 +46,24 @@ type ImageConfig struct {
 	ImageSize   string `json:"imageSize,omitempty"`
 }
 
+var ModelMapping = map[string]string{
+	"Nano Flash 1K":   "gemini-2.5-flash-image",
+	"Nano Pro 1K":     "gemini-3-pro-image-preview",
+	"Nano Pro 2K":     "gemini-3-pro-image-preview",
+	"Nano Pro 4K":     "gemini-3-pro-image-preview",
+	"Nano 2 1K":       "gemini-3.1-flash-image-preview",
+	"Nano 2 2K":       "gemini-3.1-flash-image-preview",
+	"Nano 2 4K":       "gemini-3.1-flash-image-preview",
+	"Imagen 2K":       "imagen-4.0-generate-001",
+	"Imagen Ultra 2K": "imagen-4.0-ultra-generate-001",
+}
+
 func (s *AppState) RunTask(task *TaskInfo) error {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", task.Agent, s.Config.APIKey)
+	modelID := ModelMapping[task.Agent]
+	if modelID == "" {
+		modelID = task.Agent // Fallback to raw if not found
+	}
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", modelID, s.Config.APIKey)
 
 	reqBody, err := s.BuildPayload(task)
 	if err != nil {

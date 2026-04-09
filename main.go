@@ -15,7 +15,7 @@ type AppState struct {
 	Images     []*ImageInfo
 	Tasks      []*TaskInfo
 	BatchJobs  []*BatchJob
-	ModelLog   *widget.Entry
+	ModelLog   *widget.Label
 }
 
 func main() {
@@ -34,9 +34,8 @@ func main() {
 	}
 
 	// Shared Log
-	state.ModelLog = widget.NewMultiLineEntry()
-	state.ModelLog.Disable()
-	state.ModelLog.SetPlaceHolder("To start, drag and drop an image or click 'New Image'...")
+	state.ModelLog = widget.NewLabel("To start, drag and drop an image or click 'New Image'...")
+	state.ModelLog.Wrapping = fyne.TextWrapBreak
 
 	// Tabs
 	createTab := state.makeCreateTab()
@@ -51,7 +50,10 @@ func main() {
 		container.NewTabItem("Help", helpTab),
 	)
 
-	content := container.NewBorder(nil, state.ModelLog, nil, nil, tabs)
+	logScroll := container.NewVScroll(state.ModelLog)
+	logScroll.SetMinSize(fyne.NewSize(0, 150))
+
+	content := container.NewBorder(nil, logScroll, nil, nil, tabs)
 	w.SetContent(content)
 
 	w.ShowAndRun()

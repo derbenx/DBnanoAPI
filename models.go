@@ -34,6 +34,7 @@ type TaskInfo struct {
 	Prompt         string
 	NegativePrompt string
 	Format         string
+	Mode           string // "Immediate" or "Batch"
 	SourcePath     string // Pipe delimited in AHK, maybe []string here
 }
 
