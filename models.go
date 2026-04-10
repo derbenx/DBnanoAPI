@@ -37,6 +37,7 @@ type TaskInfo struct {
 	Prompt         string
 	NegativePrompt string
 	Format         string
+	Disabled       bool
 	SourcePath     string
 }
 

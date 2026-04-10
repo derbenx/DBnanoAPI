@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -18,6 +20,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	// Pre-declare components to resolve cross-references
 	var imageList *widget.Table
 	var taskList *widget.Table
+	var imageRTC *RightClickTable
+	var taskRTC *RightClickTable
 	var preview *canvas.Image
 	var promptEntry *TabbableEntry
 	var negPromptEntry *TabbableEntry
@@ -25,6 +29,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var sizeSelect *widget.Select
 	var ratioSelect *widget.Select
 	var modeSelect *widget.RadioGroup
+	var sourceIDsEntry *widget.Entry
 
 	// --- Component Initialization ---
 
@@ -32,11 +37,50 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	preview.FillMode = canvas.ImageFillContain
 	preview.SetMinSize(fyne.NewSize(300, 200))
 
-	imageList = widget.NewTable(
+	imageRTC = NewRightClickTable(
 		func() (int, int) { return len(s.Images) + 1, 5 },
-		func() fyne.CanvasObject { return widget.NewLabel("Header") },
+		func() fyne.CanvasObject {
+			l := NewRightClickLabel("")
+			l.OnRightClick = func(id widget.TableCellID, pos fyne.Position) {
+				if id.Row == 0 {
+					return
+				}
+				menu := fyne.NewMenu("",
+					fyne.NewMenuItem("Change Image", func() {
+						selectedImgRow = id.Row
+						fd := widget.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+							if err == nil && reader != nil {
+								p := reader.URI().Path()
+								img := s.Images[id.Row-1]
+								img.FullPath = p
+								img.FileName = filepath.Base(p)
+								info, _ := os.Stat(p)
+								img.SizeMB = float64(info.Size()) / 1024 / 1024
+
+								// Update tasks that use this image
+								for _, t := range s.Tasks {
+									if t.ImgIDs == img.ID {
+										t.SourcePath = p
+									}
+								}
+								imageList.Refresh()
+								s.Log("Image changed to: " + p)
+							}
+						}, s.Window)
+						fd.Show()
+					}),
+					fyne.NewMenuItem("Delete", func() {
+						selectedImgRow = id.Row
+						s.DeleteHandler()
+					}),
+				)
+				widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(l), pos)
+			}
+			return l
+		},
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			label := cell.(*widget.Label)
+			label := cell.(*RightClickLabel)
+			label.id = id
 			if id.Row == 0 {
 				headers := []string{"#", "MBs", "tasks", "Image", "Path"}
 				label.SetText(headers[id.Col])
@@ -57,6 +101,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			}
 		},
 	)
+	imageList = imageRTC.Table
 	imageList.SetColumnWidth(0, 30)
 	imageList.SetColumnWidth(1, 50)
 	imageList.SetColumnWidth(2, 50)
@@ -65,6 +110,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	imageList.OnSelected = func(id widget.TableCellID) {
 		selectedImgRow = id.Row
+		selectedTaskRow = -1 // Clear other selection
 		if id.Row > 0 {
 			img := s.Images[id.Row-1]
 			if img.FullPath != "<GENERATE>" {
@@ -74,11 +120,36 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	}
 
-	taskList = widget.NewTable(
+	taskRTC = NewRightClickTable(
 		func() (int, int) { return len(s.Tasks) + 1, 6 },
-		func() fyne.CanvasObject { return widget.NewLabel("Header") },
+		func() fyne.CanvasObject {
+			l := NewRightClickLabel("")
+			l.OnRightClick = func(id widget.TableCellID, pos fyne.Position) {
+				if id.Row == 0 {
+					return
+				}
+				task := s.Tasks[id.Row-1]
+				toggleText := "Disable"
+				if task.Disabled {
+					toggleText = "Enable"
+				}
+				menu := fyne.NewMenu("",
+					fyne.NewMenuItem(toggleText, func() {
+						task.Disabled = !task.Disabled
+						taskList.Refresh()
+					}),
+					fyne.NewMenuItem("Delete", func() {
+						selectedTaskRow = id.Row
+						s.DeleteHandler()
+					}),
+				)
+				widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(l), pos)
+			}
+			return l
+		},
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			label := cell.(*widget.Label)
+			label := cell.(*RightClickLabel)
+			label.id = id
 			if id.Row == 0 {
 				headers := []string{"Img", "Agent", "Res", "Ratio", "Status", "Prompt"}
 				label.SetText(headers[id.Col])
@@ -95,15 +166,21 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			case 3:
 				label.SetText(task.Ratio)
 			case 4:
-				label.SetText(task.Status)
+				status := task.Status
+				if task.Disabled {
+					status += " (Off)"
+				}
+				label.SetText(status)
 			case 5:
 				label.SetText(task.Prompt)
 			}
 		},
 	)
+	taskList = taskRTC.Table
 
 	taskList.OnSelected = func(id widget.TableCellID) {
 		selectedTaskRow = id.Row
+		selectedImgRow = -1 // Clear other selection
 		if id.Row > 0 && id.Row <= len(s.Tasks) {
 			task := s.Tasks[id.Row-1]
 
@@ -113,12 +190,16 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			oldA := agentSelect.OnChanged
 			oldS := sizeSelect.OnChanged
 			oldR := ratioSelect.OnChanged
+			oldIDs := sourceIDsEntry.OnChanged
+
 			promptEntry.OnChanged = nil
 			negPromptEntry.OnChanged = nil
 			agentSelect.OnChanged = nil
 			sizeSelect.OnChanged = nil
 			ratioSelect.OnChanged = nil
+			sourceIDsEntry.OnChanged = nil
 
+			sourceIDsEntry.SetText(task.ImgIDs)
 			promptEntry.SetText(task.Prompt)
 			negPromptEntry.SetText(task.NegativePrompt)
 			agentSelect.SetSelected(task.Agent)
@@ -130,10 +211,13 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			agentSelect.OnChanged = oldA
 			sizeSelect.OnChanged = oldS
 			ratioSelect.OnChanged = oldR
+			sourceIDsEntry.OnChanged = oldIDs
 		}
 	}
 
 	// Task Editor Fields
+	sourceIDsEntry = widget.NewEntry()
+
 	promptEntry = NewTabbableEntry()
 	promptEntry.SetText(s.Config.DefaultPrompt)
 	promptEntry.Wrapping = fyne.TextWrapWord
@@ -156,6 +240,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	updateTaskFromUI := func() {
 		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
 			task := s.Tasks[selectedTaskRow-1]
+			task.ImgIDs = sourceIDsEntry.Text
 			task.Prompt = promptEntry.Text
 			task.NegativePrompt = negPromptEntry.Text
 			task.Agent = agentSelect.Selected
@@ -165,6 +250,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	}
 
+	sourceIDsEntry.OnChanged = func(string) { updateTaskFromUI() }
 	promptEntry.OnChanged = func(string) { updateTaskFromUI() }
 	negPromptEntry.OnChanged = func(string) { updateTaskFromUI() }
 	agentSelect.OnChanged = func(str string) {
@@ -251,6 +337,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			batchTasks := make(map[string][]*TaskInfo)
 
 			for i, task := range s.Tasks {
+				if task.Disabled {
+					continue
+				}
 				if task.Status != "Pending" && task.Status != "Failed" && task.Status != "Success" {
 					continue
 				}
@@ -311,18 +400,21 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	btnBox := container.NewHBox(newImgBtn, addTaskBtn, layout.NewSpacer(), widget.NewLabel("Mode:"), modeSelect, runBtn)
 
-	taskEditor := widget.NewForm(
-		widget.NewFormItem("Positive Prompt", promptEntry),
-		widget.NewFormItem("Negative Prompt", negPromptEntry),
-		widget.NewFormItem("Agent", agentSelect),
-		widget.NewFormItem("Size", sizeSelect),
-		widget.NewFormItem("Aspect Ratio", ratioSelect),
+	promptEntry.SetMinRowsVisible(8)
+
+	taskEditor := container.New(layout.NewFormLayout(),
+		widget.NewLabel("Source\nIDs:"), sourceIDsEntry,
+		widget.NewLabel("Positive\nPrompt:"), promptEntry,
+		widget.NewLabel("Negative\nPrompt:"), negPromptEntry,
+		widget.NewLabel("Agent:"), agentSelect,
+		widget.NewLabel("Size:"), sizeSelect,
+		widget.NewLabel("Aspect\nRatio:"), ratioSelect,
 	)
 
-	imgScroll := container.NewVScroll(imageList)
+	imgScroll := container.NewVScroll(imageRTC)
 	topHalf := container.New(layout.NewGridLayout(2), imgScroll, preview)
 
-	taskTableScroll := container.NewVScroll(taskList)
+	taskTableScroll := container.NewVScroll(taskRTC)
 	taskTableScroll.SetMinSize(fyne.NewSize(0, 150))
 
 	middle := container.NewVBox(btnBox, taskTableScroll)

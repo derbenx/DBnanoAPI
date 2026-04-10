@@ -20,6 +20,7 @@ type AppState struct {
 	BatchJobs  []*BatchJob
 	ModelLog   *widget.Label
 	LogScroll  *container.Scroll
+	Window     fyne.Window
 
 	DeleteHandler   func()
 	OnImagesUpdated func()
@@ -40,6 +41,7 @@ func main() {
 	state := &AppState{
 		Config:     cfg,
 		GlobalMode: "Immediate",
+		Window:     w,
 	}
 
 	// Shared Log
@@ -63,8 +65,9 @@ func main() {
 	logScroll.SetMinSize(fyne.NewSize(0, 150))
 	state.LogScroll = logScroll
 
-	content := container.NewBorder(nil, logScroll, nil, nil, tabs)
-	w.SetContent(content)
+	mainSplit := container.NewVSplit(tabs, logScroll)
+	mainSplit.Offset = 0.8
+	w.SetContent(mainSplit)
 
 	// Background Monitoring
 	go func() {

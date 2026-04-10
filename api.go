@@ -152,8 +152,14 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	}
 
 	// 3. Submit Batch Job
+	// Extract resource name (files/...) from URI
+	resourceName := fileURI
+	if parts := strings.Split(fileURI, "/"); len(parts) > 0 {
+		resourceName = "files/" + parts[len(parts)-1]
+	}
+
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchGenerateContent?key=%s", modelID, s.Config.APIKey)
-	submitReq := fmt.Sprintf(`{"batch": {"input_config": {"file_name": "%s"}}}`, fileURI)
+	submitReq := fmt.Sprintf(`{"batch": {"input_config": {"file_name": "%s"}}}`, resourceName)
 
 	resp, err := http.Post(url, "application/json", strings.NewReader(submitReq))
 	if err != nil {
@@ -195,7 +201,7 @@ func (s *AppState) UploadFile(data []byte) (string, error) {
 	writer.SetBoundary(boundary)
 
 	// Part 1: Metadata
-	metadata := fmt.Sprintf(`{"file": {"display_name": "batch_%d"}}`, time.Now().Unix())
+	metadata := fmt.Sprintf(`{"file": {"display_name": "b%d"}}`, time.Now().Unix())
 	h := make(textproto.MIMEHeader)
 	h.Set("Content-Type", "application/json; charset=UTF-8")
 	p, _ := writer.CreatePart(h)
