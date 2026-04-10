@@ -241,26 +241,25 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	runBtn := widget.NewButton("RUN TASKS", func() {
 		go func() {
+			processedCount := 0
+			batchTasks := make(map[string][]*TaskInfo)
+
 			for i, task := range s.Tasks {
 				if task.Status != "Pending" && task.Status != "Failed" {
 					continue
 				}
 
 				if task.Mode == "Batch" {
-					fyne.Do(func() {
-						task.Status = "Submitted"
-						s.BatchJobs = append(s.BatchJobs, &BatchJob{
-							JobID:       fmt.Sprintf("Job_%d", task.ID),
-							Status:      "Submitted",
-							SubmittedAt: time.Now(),
-							Progress:    "0%",
-						})
-						taskList.Refresh()
-					})
-					s.Log(fmt.Sprintf("[%d] Task submitted as Batch Job.", i+1))
-					continue
+					if strings.Contains(task.Agent, "Imagen") {
+						s.Log(fmt.Sprintf("[%d] Warning: Imagen doesn't support batch. Using Immediate mode.", i+1))
+					} else {
+						batchTasks[task.Agent] = append(batchTasks[task.Agent], task)
+						processedCount++
+						continue
+					}
 				}
 
+				processedCount++
 				fyne.Do(func() {
 					task.Status = "Running"
 					taskList.Refresh()
@@ -276,6 +275,29 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					}
 					taskList.Refresh()
 				})
+			}
+
+			// Submit batch groups
+			for agent, tasks := range batchTasks {
+				s.Log(fmt.Sprintf("Submitting batch for %s (%d tasks)...", agent, len(tasks)))
+				err := s.SubmitBatchJob(tasks)
+				fyne.Do(func() {
+					status := "Submitted"
+					if err != nil {
+						status = "Failed"
+						s.Log("Batch Submission Error: " + err.Error())
+					}
+					for _, t := range tasks {
+						t.Status = status
+					}
+					taskList.Refresh()
+				})
+			}
+
+			if processedCount == 0 {
+				s.Log("No pending or failed tasks to run.")
+			} else {
+				s.Log(fmt.Sprintf("Finished processing %d tasks.", processedCount))
 			}
 		}()
 	})

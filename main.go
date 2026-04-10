@@ -63,6 +63,29 @@ func main() {
 	content := container.NewBorder(nil, logScroll, nil, nil, tabs)
 	w.SetContent(content)
 
+	// Background Monitoring
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute)
+		for range ticker.C {
+			if len(state.BatchJobs) == 0 {
+				continue
+			}
+			state.Log("Checking batch statuses...")
+			for _, job := range state.BatchJobs {
+				if job.Status == "SUCCEEDED" || job.Status == "FAILED" || job.Status == "CANCELLED" {
+					continue
+				}
+				err := state.CheckBatchStatus(job)
+				if err != nil {
+					state.Log("Status check error: " + err.Error())
+				}
+			}
+			fyne.Do(func() {
+				batchesTab.Refresh()
+			})
+		}
+	}()
+
 	w.SetOnDropped(func(pos fyne.Position, uris []fyne.URI) {
 		for _, uri := range uris {
 			ext := uri.Extension()
@@ -100,12 +123,38 @@ func makeHelpTab(state *AppState) fyne.CanvasObject {
 
 func (s *AppState) Log(msg string) {
 	timestamp := time.Now().Format("15:04:05")
+
+	// UI Log
 	fyne.Do(func() {
 		s.ModelLog.SetText(s.ModelLog.Text + "\n[" + timestamp + "] " + msg)
 		if s.LogScroll != nil {
 			s.LogScroll.ScrollToBottom()
 		}
 	})
+
+	// Debug.log file
+	if s.Config.Debug {
+		s.LogToFile(msg)
+	}
+}
+
+func (s *AppState) LogToFile(msg string) {
+	logPath := "debug.log"
+	limit := int64(300 * 1024 * 1024)
+
+	if info, err := os.Stat(logPath); err == nil && info.Size() > limit {
+		timestamp := time.Now().Format("2006-01-02-15-04-05")
+		os.Rename(logPath, "debug_"+timestamp+".log")
+	}
+
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	f.WriteString("[" + timestamp + "] " + msg + "\n")
 }
 
 func (s *AppState) AddImages(paths []string) {
