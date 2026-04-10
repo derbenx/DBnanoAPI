@@ -18,6 +18,21 @@ import (
 	"fyne.io/fyne/v2"
 )
 
+type ImagenRequest struct {
+	Instances  []ImagenInstance   `json:"instances"`
+	Parameters ImagenParameters   `json:"parameters"`
+}
+
+type ImagenInstance struct {
+	Prompt string `json:"prompt"`
+}
+
+type ImagenParameters struct {
+	SampleCount     int    `json:"sampleCount"`
+	AspectRatio     string `json:"aspectRatio"`
+	SampleImageSize string `json:"sampleImageSize,omitempty"`
+}
+
 type GeminiRequest struct {
 	Contents          []Content         `json:"contents"`
 	SystemInstruction *Content          `json:"systemInstruction,omitempty"`
@@ -63,9 +78,19 @@ func (s *AppState) RunTask(task *TaskInfo) error {
 	if modelID == "" {
 		modelID = task.Agent // Fallback to raw if not found
 	}
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", modelID, s.Config.APIKey)
 
-	reqBody, err := s.BuildPayload(task)
+	var url string
+	var reqBody []byte
+	var err error
+
+	if strings.Contains(task.Agent, "Imagen") {
+		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:predict?key=%s", modelID, s.Config.APIKey)
+		reqBody, err = s.BuildImagenPayload(task)
+	} else {
+		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", modelID, s.Config.APIKey)
+		reqBody, err = s.BuildPayload(task)
+	}
+
 	if err != nil {
 		return err
 	}
@@ -206,6 +231,20 @@ func (s *AppState) UploadFile(data []byte) (string, error) {
 		return "", fmt.Errorf("no URI in response: %s", string(resBody))
 	}
 	return res.File.URI, nil
+}
+
+func (s *AppState) BuildImagenPayload(task *TaskInfo) ([]byte, error) {
+	req := ImagenRequest{
+		Instances: []ImagenInstance{{Prompt: task.Prompt}},
+		Parameters: ImagenParameters{
+			SampleCount: 1,
+			AspectRatio: task.Ratio,
+		},
+	}
+	if task.Size != "1K" {
+		req.Parameters.SampleImageSize = task.Size
+	}
+	return json.Marshal(req)
 }
 
 func (s *AppState) BuildPayload(task *TaskInfo) ([]byte, error) {
@@ -435,7 +474,8 @@ func (s *AppState) ProcessBatchItem(respBody []byte, customID string) {
 }
 
 func (s *AppState) ProcessResponse(body []byte, task *TaskInfo) error {
-	var resp struct {
+	// 1. Try Gemini Candidates format
+	var geminiResp struct {
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
@@ -449,42 +489,51 @@ func (s *AppState) ProcessResponse(body []byte, task *TaskInfo) error {
 		} `json:"candidates"`
 	}
 
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return err
-	}
-
-	if len(resp.Candidates) == 0 {
-		return fmt.Errorf("no candidates in response")
-	}
-
-	cand := resp.Candidates[0]
-	if cand.FinishReason != "" && cand.FinishReason != "STOP" && cand.FinishReason != "SUCCESS" {
-		return fmt.Errorf("finish reason: %s", cand.FinishReason)
-	}
-
-	for _, part := range cand.Content.Parts {
-		if part.InlineData.Data != "" {
-			data, err := base64.StdEncoding.DecodeString(part.InlineData.Data)
-			if err != nil {
-				return err
+	if err := json.Unmarshal(body, &geminiResp); err == nil && len(geminiResp.Candidates) > 0 {
+		cand := geminiResp.Candidates[0]
+		if cand.FinishReason != "" && cand.FinishReason != "STOP" && cand.FinishReason != "SUCCESS" {
+			return fmt.Errorf("finish reason: %s", cand.FinishReason)
+		}
+		for _, part := range cand.Content.Parts {
+			if part.InlineData.Data != "" {
+				return s.SaveBase64Image(part.InlineData.Data, part.InlineData.MimeType, task.ID)
 			}
-
-			ext := "jpg"
-			if strings.Contains(strings.ToLower(part.InlineData.MimeType), "png") {
-				ext = "png"
-			}
-
-			fileName := fmt.Sprintf("GoTask_%d_%d.%s", task.ID, time.Now().Unix(), ext)
-			outPath := filepath.Join(s.Config.OutputDir, fileName)
-
-			os.MkdirAll(s.Config.OutputDir, 0755)
-			err = os.WriteFile(outPath, data, 0644)
-			if err == nil {
-				s.Log("Saved image to: " + outPath)
-			}
-			return err
 		}
 	}
 
-	return fmt.Errorf("no image data in response")
+	// 2. Try Imagen predictions format
+	var imagenResp struct {
+		Predictions []struct {
+			MimeType           string `json:"mimeType"`
+			BytesBase64Encoded string `json:"bytesBase64Encoded"`
+		} `json:"predictions"`
+	}
+	if err := json.Unmarshal(body, &imagenResp); err == nil && len(imagenResp.Predictions) > 0 {
+		pred := imagenResp.Predictions[0]
+		return s.SaveBase64Image(pred.BytesBase64Encoded, pred.MimeType, task.ID)
+	}
+
+	return fmt.Errorf("no image data in response: %s", string(body))
+}
+
+func (s *AppState) SaveBase64Image(b64, mime string, taskID int) error {
+	data, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return err
+	}
+
+	ext := "jpg"
+	if strings.Contains(strings.ToLower(mime), "png") {
+		ext = "png"
+	}
+
+	fileName := fmt.Sprintf("GoTask_%d_%d.%s", taskID, time.Now().Unix(), ext)
+	outPath := filepath.Join(s.Config.OutputDir, fileName)
+
+	os.MkdirAll(s.Config.OutputDir, 0755)
+	err = os.WriteFile(outPath, data, 0644)
+	if err == nil {
+		s.Log("Saved image to: " + outPath)
+	}
+	return err
 }
