@@ -191,7 +191,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	ratioSelect.OnChanged = func(string) { updateTaskFromUI() }
 	agentSelect.SetSelected("Nano Flash")
 
-	modeSelect = widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(string) {})
+	modeSelect = widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(m string) {
+		s.GlobalMode = m
+		s.Log("Mode switched to: " + m)
+	})
 	modeSelect.SetSelected("Immediate")
 	modeSelect.Horizontal = true
 
@@ -237,7 +240,6 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			Status:         "Pending",
 			Prompt:         promptEntry.Text,
 			NegativePrompt: negPromptEntry.Text,
-			Mode:           modeSelect.Selected,
 			SourcePath:     path,
 		})
 		taskList.Refresh()
@@ -253,12 +255,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					continue
 				}
 
-				if task.Mode == "Batch" {
+				if s.GlobalMode == "Batch" {
 					if strings.Contains(task.Agent, "Imagen") {
 						s.Log(fmt.Sprintf("[%d] Warning: Imagen doesn't support batch. Using Immediate mode.", i+1))
 					} else {
 						batchTasks[task.Agent] = append(batchTasks[task.Agent], task)
-						processedCount++
 						continue
 					}
 				}
@@ -282,6 +283,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			}
 
 			for agent, tasks := range batchTasks {
+				processedCount++
 				s.Log(fmt.Sprintf("Submitting batch for %s (%d tasks)...", agent, len(tasks)))
 				err := s.SubmitBatchJob(tasks)
 				fyne.Do(func() {
@@ -299,6 +301,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 			if processedCount == 0 {
 				s.Log("No tasks to run.")
+			} else {
+				s.Log(fmt.Sprintf("Finished processing %d jobs.", processedCount))
 			}
 		}()
 	})

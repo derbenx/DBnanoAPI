@@ -23,6 +23,7 @@ type AppState struct {
 
 	DeleteHandler   func()
 	OnImagesUpdated func()
+	GlobalMode      string
 }
 
 func main() {
@@ -37,7 +38,8 @@ func main() {
 	}
 
 	state := &AppState{
-		Config: cfg,
+		Config:     cfg,
+		GlobalMode: "Immediate",
 	}
 
 	// Shared Log

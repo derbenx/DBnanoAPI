@@ -8,14 +8,14 @@ type SafetySetting struct {
 }
 
 type Config struct {
-	APIKey         string          `json:"api_key"`
-	OutputDir      string          `json:"output_dir"`
-	DefaultPrompt  string          `json:"default_prompt"`
-	DefaultNegPrompt string        `json:"default_neg_prompt"`
-	EncourageEdt   string          `json:"encourage_edt"`
-	EncourageGen   string          `json:"encourage_gen"`
-	Debug          bool            `json:"debug"`
-	SafetySettings []SafetySetting `json:"safety_settings"`
+	APIKey           string          `json:"api_key"`
+	OutputDir        string          `json:"output_dir"`
+	DefaultPrompt    string          `json:"default_prompt"`
+	DefaultNegPrompt string          `json:"default_neg_prompt"`
+	EncourageEdt     string          `json:"encourage_edt"`
+	EncourageGen     string          `json:"encourage_gen"`
+	Debug            bool            `json:"debug"`
+	SafetySettings   []SafetySetting `json:"safety_settings"`
 }
 
 type ImageInfo struct {
@@ -37,8 +37,7 @@ type TaskInfo struct {
 	Prompt         string
 	NegativePrompt string
 	Format         string
-	Mode           string // "Immediate" or "Batch"
-	SourcePath     string // Pipe delimited in AHK, maybe []string here
+	SourcePath     string
 }
 
 type BatchJob struct {
