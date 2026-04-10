@@ -292,16 +292,13 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	// Layout
 	imgScroll := container.NewVScroll(imageList)
-	imgScroll.ScrollBarVisibility = container.ScrollKeepVisible
 	topHalf := container.New(layout.NewGridLayout(2), imgScroll, preview)
 
 	taskTableScroll := container.NewVScroll(taskList)
-	taskTableScroll.ScrollBarVisibility = container.ScrollKeepVisible
 	taskTableScroll.SetMinSize(fyne.NewSize(0, 150)) // Set height for task list
 
 	middle := container.NewVBox(btnBox, taskTableScroll)
 	right := container.NewVScroll(taskEditor)
-	right.ScrollBarVisibility = container.ScrollKeepVisible
 
 	s.OnImagesUpdated = func() {
 		imageList.Refresh()

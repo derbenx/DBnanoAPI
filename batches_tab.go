@@ -44,7 +44,6 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 	})
 
 	tableScroll := container.NewVScroll(batchTable)
-	tableScroll.ScrollBarVisibility = container.ScrollKeepVisible
 	tableScroll.SetMinSize(fyne.NewSize(0, 400))
 
 	return container.NewBorder(nil, clearBtn, nil, nil, tableScroll)

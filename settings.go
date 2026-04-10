@@ -97,6 +97,5 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 		saveBtn,
 	)
 	scroll := container.NewVScroll(content)
-	scroll.ScrollBarVisibility = container.ScrollKeepVisible
 	return scroll
 }
