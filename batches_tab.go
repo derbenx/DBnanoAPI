@@ -2,6 +2,7 @@ package main
 
 import (
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -30,5 +31,21 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 		},
 	)
 
-	return batchTable
+	clearBtn := widget.NewButton("Clear Completed", func() {
+		newJobs := []*BatchJob{}
+		for _, job := range state.BatchJobs {
+			if job.Status != "Success" && job.Status != "Failed" && job.Status != "SUCCEEDED" && job.Status != "FAILED" && job.Status != "CANCELLED" {
+				newJobs = append(newJobs, job)
+			}
+		}
+		state.BatchJobs = newJobs
+		batchTable.Refresh()
+		state.Log("Cleared completed batch jobs.")
+	})
+
+	tableScroll := container.NewVScroll(batchTable)
+	tableScroll.ScrollBarVisibility = container.ScrollKeepVisible
+	tableScroll.SetMinSize(fyne.NewSize(0, 400))
+
+	return container.NewBorder(nil, clearBtn, nil, nil, tableScroll)
 }

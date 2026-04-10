@@ -57,6 +57,7 @@ func main() {
 	)
 
 	logScroll := container.NewVScroll(state.ModelLog)
+	logScroll.ScrollBarVisibility = container.ScrollKeepVisible
 	logScroll.SetMinSize(fyne.NewSize(0, 150))
 	state.LogScroll = logScroll
 

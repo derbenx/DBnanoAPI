@@ -91,9 +91,12 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 		safetyBox.Add(widget.NewForm(widget.NewFormItem(cat, sel)))
 	}
 
-	return container.NewVScroll(container.NewVBox(
+	content := container.NewVBox(
 		form,
 		safetyBox,
 		saveBtn,
-	))
+	)
+	scroll := container.NewVScroll(content)
+	scroll.ScrollBarVisibility = container.ScrollKeepVisible
+	return scroll
 }

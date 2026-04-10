@@ -68,6 +68,63 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	}
 
+	// Right side: Task Editor
+	promptEntry := NewTabbableEntry()
+	promptEntry.SetText(s.Config.DefaultPrompt)
+	promptEntry.Wrapping = fyne.TextWrapWord
+
+	negPromptEntry := NewTabbableEntry()
+	negPromptEntry.SetText(s.Config.DefaultNegPrompt)
+	negPromptEntry.Wrapping = fyne.TextWrapWord
+
+	agentOptions := []string{"Nano Flash", "Nano Pro", "Nano 2", "Imagen", "Imagen Ultra"}
+	agentSelect := widget.NewSelect(agentOptions, nil)
+
+	sizeSelect := widget.NewSelect([]string{"1K", "2K", "4K"}, nil)
+	sizeSelect.SetSelected("1K")
+
+	ratioOptions := []string{"Default", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9"}
+	ratioOptionsExt := []string{"Default", "1:8", "1:4", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9", "4:1", "8:1"}
+	ratioSelect := widget.NewSelect(ratioOptions, nil)
+	ratioSelect.SetSelected("1:1")
+
+	updateTaskFromUI := func() {
+		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
+			task := s.Tasks[selectedTaskRow-1]
+			task.Prompt = promptEntry.Text
+			task.NegativePrompt = negPromptEntry.Text
+			task.Agent = agentSelect.Selected
+			task.Size = sizeSelect.Selected
+			task.Ratio = ratioSelect.Selected
+			taskList.Refresh()
+		}
+	}
+
+	promptEntry.OnChanged = func(string) { updateTaskFromUI() }
+	negPromptEntry.OnChanged = func(string) { updateTaskFromUI() }
+	agentSelect.OnChanged = func(str string) {
+		updateTaskFromUI()
+		if str == "Nano 2" {
+			ratioSelect.Options = ratioOptionsExt
+		} else {
+			ratioSelect.Options = ratioOptions
+		}
+		ratioSelect.Refresh()
+
+		if str == "Imagen" || str == "Imagen Ultra" {
+			sizeSelect.Options = []string{"2K"}
+			sizeSelect.SetSelected("2K")
+		} else if str == "Nano Flash" {
+			sizeSelect.Options = []string{"1K"}
+			sizeSelect.SetSelected("1K")
+		} else {
+			sizeSelect.Options = []string{"1K", "2K", "4K"}
+		}
+		sizeSelect.Refresh()
+	}
+	sizeSelect.OnChanged = func(string) { updateTaskFromUI() }
+	ratioSelect.OnChanged = func(string) { updateTaskFromUI() }
+
 	// Task List (Bottom)
 	taskList = widget.NewTable(
 		func() (int, int) { return len(s.Tasks) + 1, 6 },
@@ -99,6 +156,33 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	taskList.OnSelected = func(id widget.TableCellID) {
 		selectedTaskRow = id.Row
+		if id.Row > 0 && id.Row <= len(s.Tasks) {
+			task := s.Tasks[id.Row-1]
+			// Temporarily disable OnChanged to avoid self-update loop during population
+			oldP := promptEntry.OnChanged
+			oldN := negPromptEntry.OnChanged
+			oldA := agentSelect.OnChanged
+			oldS := sizeSelect.OnChanged
+			oldR := ratioSelect.OnChanged
+
+			promptEntry.OnChanged = nil
+			negPromptEntry.OnChanged = nil
+			agentSelect.OnChanged = nil
+			sizeSelect.OnChanged = nil
+			ratioSelect.OnChanged = nil
+
+			promptEntry.SetText(task.Prompt)
+			negPromptEntry.SetText(task.NegativePrompt)
+			agentSelect.SetSelected(task.Agent)
+			sizeSelect.SetSelected(task.Size)
+			ratioSelect.SetSelected(task.Ratio)
+
+			promptEntry.OnChanged = oldP
+			negPromptEntry.OnChanged = oldN
+			agentSelect.OnChanged = oldA
+			sizeSelect.OnChanged = oldS
+			ratioSelect.OnChanged = oldR
+		}
 	}
 
 	// Buttons
@@ -111,46 +195,6 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		imageList.Refresh()
 	})
 
-	// Right side: Task Editor
-	promptEntry := NewTabbableEntry()
-	promptEntry.SetText(s.Config.DefaultPrompt)
-	promptEntry.Wrapping = fyne.TextWrapWord
-
-	negPromptEntry := NewTabbableEntry()
-	negPromptEntry.SetText(s.Config.DefaultNegPrompt)
-	negPromptEntry.Wrapping = fyne.TextWrapWord
-
-	agentOptions := []string{"Nano Flash", "Nano Pro", "Nano 2", "Imagen", "Imagen Ultra"}
-	agentSelect := widget.NewSelect(agentOptions, nil)
-
-	sizeSelect := widget.NewSelect([]string{"1K", "2K", "4K"}, nil)
-	sizeSelect.SetSelected("1K")
-
-	ratioOptions := []string{"Default", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9"}
-	ratioOptionsExt := []string{"Default", "1:8", "1:4", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9", "4:1", "8:1"}
-	ratioSelect := widget.NewSelect(ratioOptions, nil)
-	ratioSelect.SetSelected("1:1")
-
-	agentSelect.OnChanged = func(s string) {
-		if s == "Nano 2" {
-			ratioSelect.Options = ratioOptionsExt
-		} else {
-			ratioSelect.Options = ratioOptions
-		}
-		ratioSelect.Refresh()
-
-		if s == "Imagen" || s == "Imagen Ultra" {
-			sizeSelect.Options = []string{"2K"}
-			sizeSelect.SetSelected("2K")
-		} else if s == "Nano Flash" {
-			sizeSelect.Options = []string{"1K"}
-			sizeSelect.SetSelected("1K")
-		} else {
-			sizeSelect.Options = []string{"1K", "2K", "4K"}
-		}
-		sizeSelect.Refresh()
-	}
-	agentSelect.SetSelected("Nano Flash")
 
 	modeSelect := widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(string) {})
 	modeSelect.SetSelected("Immediate")
@@ -247,9 +291,17 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	)
 
 	// Layout
-	topHalf := container.New(layout.NewGridLayout(2), imageList, preview)
-	middle := container.NewVBox(btnBox, taskList)
+	imgScroll := container.NewVScroll(imageList)
+	imgScroll.ScrollBarVisibility = container.ScrollKeepVisible
+	topHalf := container.New(layout.NewGridLayout(2), imgScroll, preview)
+
+	taskTableScroll := container.NewVScroll(taskList)
+	taskTableScroll.ScrollBarVisibility = container.ScrollKeepVisible
+	taskTableScroll.SetMinSize(fyne.NewSize(0, 150)) // Set height for task list
+
+	middle := container.NewVBox(btnBox, taskTableScroll)
 	right := container.NewVScroll(taskEditor)
+	right.ScrollBarVisibility = container.ScrollKeepVisible
 
 	s.OnImagesUpdated = func() {
 		imageList.Refresh()
