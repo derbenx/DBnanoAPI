@@ -16,6 +16,10 @@ type Config struct {
 	EncourageGen     string          `json:"encourage_gen"`
 	Debug            bool            `json:"debug"`
 	SafetySettings   []SafetySetting `json:"safety_settings"`
+	Temperature      float32         `json:"temperature"`
+	TopP             float32         `json:"top_p"`
+	TopK             int             `json:"top_k"`
+	MaxOutputTokens  int             `json:"max_output_tokens"`
 }
 
 type ImageInfo struct {

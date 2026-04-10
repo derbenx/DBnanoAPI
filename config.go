@@ -54,5 +54,9 @@ func DefaultConfig() *Config {
 			{"HARM_CATEGORY_SEXUALLY_EXPLICIT", "BLOCK_NONE"},
 			{"HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_NONE"},
 		},
+		Temperature:     1.5,
+		TopP:            0.95,
+		TopK:            40,
+		MaxOutputTokens: 8192,
 	}
 }

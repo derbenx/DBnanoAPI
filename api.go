@@ -56,7 +56,11 @@ type InlineData struct {
 
 type GenerationConfig struct {
 	CandidateCount     int          `json:"candidateCount"`
-	ResponseModalities []string     `json:"responseModalities"`
+	ResponseModalities []string     `json:"responseModalities,omitempty"`
+	Temperature        float32      `json:"temperature,omitempty"`
+	TopP               float32      `json:"topP,omitempty"`
+	TopK               int          `json:"topK,omitempty"`
+	MaxOutputTokens    int          `json:"maxOutputTokens,omitempty"`
 	ImageConfig        *ImageConfig `json:"imageConfig,omitempty"`
 }
 
@@ -285,6 +289,10 @@ func (s *AppState) BuildPayload(task *TaskInfo) ([]byte, error) {
 		GenerationConfig: &GenerationConfig{
 			CandidateCount:     1,
 			ResponseModalities: []string{"IMAGE"},
+			Temperature:        s.Config.Temperature,
+			TopP:               s.Config.TopP,
+			TopK:               s.Config.TopK,
+			MaxOutputTokens:    s.Config.MaxOutputTokens,
 			ImageConfig: &ImageConfig{
 				AspectRatio: task.Ratio,
 				ImageSize:   task.Size,

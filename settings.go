@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"strconv"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -42,6 +45,29 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 	debugCheck := widget.NewCheck("Debug Mode", func(b bool) {})
 	debugCheck.SetChecked(state.Config.Debug)
 
+	// Generation Config
+	tempLabel := widget.NewLabel(fmt.Sprintf("Temperature: %.1f", state.Config.Temperature))
+	tempSlider := widget.NewSlider(0, 2)
+	tempSlider.Step = 0.1
+	tempSlider.Value = float64(state.Config.Temperature)
+	tempSlider.OnChanged = func(v float64) {
+		tempLabel.SetText(fmt.Sprintf("Temperature: %.1f", v))
+	}
+
+	topPLabel := widget.NewLabel(fmt.Sprintf("TopP: %.2f", state.Config.TopP))
+	topPSlider := widget.NewSlider(0, 1)
+	topPSlider.Step = 0.01
+	topPSlider.Value = float64(state.Config.TopP)
+	topPSlider.OnChanged = func(v float64) {
+		topPLabel.SetText(fmt.Sprintf("TopP: %.2f", v))
+	}
+
+	topKEntry := widget.NewEntry()
+	topKEntry.SetText(strconv.Itoa(state.Config.TopK))
+
+	maxTokensEntry := widget.NewEntry()
+	maxTokensEntry.SetText(strconv.Itoa(state.Config.MaxOutputTokens))
+
 	// Safety Settings
 	thresholds := []string{"BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"}
 
@@ -60,6 +86,15 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 		state.Config.EncourageEdt = encourageEdtEntry.Text
 		state.Config.EncourageGen = encourageGenEntry.Text
 		state.Config.Debug = debugCheck.Checked
+
+		state.Config.Temperature = float32(tempSlider.Value)
+		state.Config.TopP = float32(topPSlider.Value)
+		if tk, err := strconv.Atoi(topKEntry.Text); err == nil {
+			state.Config.TopK = tk
+		}
+		if mt, err := strconv.Atoi(maxTokensEntry.Text); err == nil {
+			state.Config.MaxOutputTokens = mt
+		}
 
 		for i, s := range state.Config.SafetySettings {
 			if sel, ok := safetySelects[s.Category]; ok {
@@ -85,6 +120,15 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 		widget.NewFormItem("", debugCheck),
 	)
 
+	genBox := container.NewVBox()
+	genBox.Add(widget.NewLabelWithStyle("Generation Parameters", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	genBox.Add(container.NewVBox(tempLabel, tempSlider))
+	genBox.Add(container.NewVBox(topPLabel, topPSlider))
+	genBox.Add(widget.NewForm(
+		widget.NewFormItem("TopK", topKEntry),
+		widget.NewFormItem("Max Tokens", maxTokensEntry),
+	))
+
 	safetyBox := container.NewVBox()
 	safetyBox.Add(widget.NewLabelWithStyle("Safety Settings", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	for cat, sel := range safetySelects {
@@ -93,6 +137,7 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 
 	content := container.NewVBox(
 		form,
+		genBox,
 		safetyBox,
 		saveBtn,
 	)

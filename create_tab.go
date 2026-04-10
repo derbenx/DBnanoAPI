@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
@@ -48,7 +49,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				menu := fyne.NewMenu("",
 					fyne.NewMenuItem("Change Image", func() {
 						selectedImgRow = id.Row
-						fd := widget.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+						fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 							if err == nil && reader != nil {
 								p := reader.URI().Path()
 								img := s.Images[id.Row-1]
