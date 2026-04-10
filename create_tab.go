@@ -286,6 +286,26 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	// --- Buttons ---
 
+	saveBtn := widget.NewButton("Save Session", func() {
+		err := s.SaveSession()
+		if err != nil {
+			s.Log("Save failed: " + err.Error())
+		} else {
+			s.Log("Session saved successfully.")
+		}
+	})
+
+	loadBtn := widget.NewButton("Load Session", func() {
+		err := s.LoadSession()
+		if err != nil {
+			s.Log("Load failed: " + err.Error())
+		} else {
+			imageList.Refresh()
+			taskList.Refresh()
+			s.Log("Session loaded successfully.")
+		}
+	})
+
 	newImgBtn := widget.NewButton("New Image", func() {
 		s.Images = append(s.Images, &ImageInfo{
 			ID:       fmt.Sprintf("%d", len(s.Images)+1),
@@ -398,7 +418,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	// --- Layout Assembly ---
 
-	btnBox := container.NewHBox(newImgBtn, addTaskBtn, layout.NewSpacer(), widget.NewLabel("Mode:"), modeSelect, runBtn)
+	btnBox := container.NewHBox(saveBtn, loadBtn, newImgBtn, addTaskBtn, layout.NewSpacer(), widget.NewLabel("Mode:"), modeSelect, runBtn)
 
 	promptEntry.SetMinRowsVisible(8)
 
