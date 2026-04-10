@@ -63,9 +63,12 @@ func main() {
 	content := container.NewBorder(nil, logScroll, nil, nil, tabs)
 	w.SetContent(content)
 
-	w.SetOnDroppedFile(func(pos fyne.Position, uri fyne.URI) {
-		if uri.Extension() == ".jpg" || uri.Extension() == ".jpeg" || uri.Extension() == ".png" {
-			state.AddImages([]string{uri.Path()})
+	w.SetOnDropped(func(pos fyne.Position, uris []fyne.URI) {
+		for _, uri := range uris {
+			ext := uri.Extension()
+			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" {
+				state.AddImages([]string{uri.Path()})
+			}
 		}
 	})
 
