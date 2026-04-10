@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -88,7 +89,7 @@ func main() {
 
 	w.SetOnDropped(func(pos fyne.Position, uris []fyne.URI) {
 		for _, uri := range uris {
-			ext := uri.Extension()
+			ext := strings.ToLower(uri.Extension())
 			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" {
 				state.AddImages([]string{uri.Path()})
 			}
@@ -99,11 +100,12 @@ func main() {
 		if k.Name == fyne.KeyDelete {
 			// Don't delete items if user is typing in a text field
 			focused := w.Canvas().Focused()
-			if _, ok := focused.(*widget.Entry); ok {
-				return
-			}
-			if _, ok := focused.(*TabbableEntry); ok {
-				return
+			if focused != nil {
+				_, isEntry := focused.(*widget.Entry)
+				_, isTabbable := focused.(*TabbableEntry)
+				if isEntry || isTabbable {
+					return
+				}
 			}
 
 			if state.DeleteHandler != nil {

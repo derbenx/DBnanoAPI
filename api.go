@@ -309,7 +309,8 @@ func (s *AppState) TestAPI() error {
 	}
 
 	s.Log(fmt.Sprintf("Connection successful. Found %d models.", len(modelsResp.Models)))
-	// Log first 10 models to avoid log spamming if there are many
+
+	// Log first 10 models to UI
 	limit := 10
 	if len(modelsResp.Models) < limit {
 		limit = len(modelsResp.Models)
@@ -317,8 +318,15 @@ func (s *AppState) TestAPI() error {
 	for i := 0; i < limit; i++ {
 		s.Log(" - " + modelsResp.Models[i].Name)
 	}
+
+	// Log ALL models to debug.log file unconditionally
+	s.LogToFile("Full Model List:")
+	for _, m := range modelsResp.Models {
+		s.LogToFile(" - " + m.Name)
+	}
+
 	if len(modelsResp.Models) > limit {
-		s.Log(fmt.Sprintf(" ... and %d more.", len(modelsResp.Models)-limit))
+		s.Log(fmt.Sprintf(" ... and %d more. Full list in debug.log", len(modelsResp.Models)-limit))
 	}
 	return nil
 }
