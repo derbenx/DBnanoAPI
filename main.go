@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -18,7 +20,8 @@ type AppState struct {
 	ModelLog   *widget.Label
 	LogScroll  *container.Scroll
 
-	DeleteHandler func()
+	DeleteHandler   func()
+	OnImagesUpdated func()
 }
 
 func main() {
@@ -60,12 +63,23 @@ func main() {
 	content := container.NewBorder(nil, logScroll, nil, nil, tabs)
 	w.SetContent(content)
 
+	w.SetOnDroppedFile(func(pos fyne.Position, uri fyne.URI) {
+		if uri.Extension() == ".jpg" || uri.Extension() == ".jpeg" || uri.Extension() == ".png" {
+			state.AddImages([]string{uri.Path()})
+		}
+	})
+
 	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
 		if k.Name == fyne.KeyDelete {
 			// Don't delete items if user is typing in a text field
-			if _, ok := w.Canvas().Focused().(*widget.Entry); ok {
+			focused := w.Canvas().Focused()
+			if _, ok := focused.(*widget.Entry); ok {
 				return
 			}
+			if _, ok := focused.(*TabbableEntry); ok {
+				return
+			}
+
 			if state.DeleteHandler != nil {
 				state.DeleteHandler()
 			}
@@ -89,4 +103,22 @@ func (s *AppState) Log(msg string) {
 			s.LogScroll.ScrollToBottom()
 		}
 	})
+}
+
+func (s *AppState) AddImages(paths []string) {
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		s.Images = append(s.Images, &ImageInfo{
+			ID:       fmt.Sprintf("%d", len(s.Images)+1),
+			FileName: filepath.Base(p),
+			FullPath: p,
+			SizeMB:   float64(info.Size()) / 1024 / 1024,
+		})
+	}
+	if s.OnImagesUpdated != nil {
+		s.OnImagesUpdated()
+	}
 }

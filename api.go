@@ -47,10 +47,11 @@ type ImageConfig struct {
 }
 
 var ModelMapping = map[string]string{
-	"Nano Flash": "gemini-2.5-flash-image",
-	"Nano Pro":   "gemini-3-pro-image-preview",
-	"Nano 2":     "gemini-3.1-flash-image-preview",
-	"Imagen":     "imagen-4.0-generate-001",
+	"Nano Flash":   "gemini-2.5-flash-image",
+	"Nano Pro":     "gemini-3-pro-image-preview",
+	"Nano 2":       "gemini-3.1-flash-image-preview",
+	"Imagen":       "imagen-4.0-generate-001",
+	"Imagen Ultra": "imagen-4.0-ultra-generate-001",
 }
 
 func (s *AppState) RunTask(task *TaskInfo) error {
@@ -231,7 +232,7 @@ func (s *AppState) ProcessResponse(body []byte, task *TaskInfo) error {
 			}
 
 			ext := "jpg"
-			if strings.Contains(part.InlineData.MimeType, "png") {
+			if strings.Contains(strings.ToLower(part.InlineData.MimeType), "png") {
 				ext = "png"
 			}
 

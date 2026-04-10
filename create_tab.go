@@ -114,15 +114,15 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	})
 
 	// Right side: Task Editor
-	promptEntry := widget.NewMultiLineEntry()
+	promptEntry := NewTabbableEntry()
 	promptEntry.SetText(s.Config.DefaultPrompt)
 	promptEntry.Wrapping = fyne.TextWrapWord
 
-	negPromptEntry := widget.NewMultiLineEntry()
+	negPromptEntry := NewTabbableEntry()
 	negPromptEntry.SetText(s.Config.DefaultNegPrompt)
 	negPromptEntry.Wrapping = fyne.TextWrapWord
 
-	agentOptions := []string{"Nano Flash", "Nano Pro", "Nano 2", "Imagen"}
+	agentOptions := []string{"Nano Flash", "Nano Pro", "Nano 2", "Imagen", "Imagen Ultra"}
 	agentSelect := widget.NewSelect(agentOptions, nil)
 
 	sizeSelect := widget.NewSelect([]string{"1K", "2K", "4K"}, nil)
@@ -141,9 +141,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 		ratioSelect.Refresh()
 
-		if s == "Imagen" {
+		if s == "Imagen" || s == "Imagen Ultra" {
 			sizeSelect.Options = []string{"2K"}
 			sizeSelect.SetSelected("2K")
+		} else if s == "Nano Flash" {
+			sizeSelect.Options = []string{"1K"}
+			sizeSelect.SetSelected("1K")
 		} else {
 			sizeSelect.Options = []string{"1K", "2K", "4K"}
 		}
@@ -163,10 +166,15 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			img := s.Images[selectedImgRow-1]
 			selectedImages = img.ID
 			sourcePaths = img.FullPath
+			img.TaskCount++
+			imageList.Refresh()
 		} else if len(s.Images) > 0 {
 			// Fallback to first image if nothing selected
-			selectedImages = s.Images[0].ID
-			sourcePaths = s.Images[0].FullPath
+			img := s.Images[0]
+			selectedImages = img.ID
+			sourcePaths = img.FullPath
+			img.TaskCount++
+			imageList.Refresh()
 		}
 
 		if sourcePaths == "" {
@@ -245,18 +253,45 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	middle := container.NewVBox(btnBox, taskList)
 	right := container.NewVScroll(taskEditor)
 
+	s.OnImagesUpdated = func() {
+		imageList.Refresh()
+	}
+
 	s.DeleteHandler = func() {
 		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
+			deletedTask := s.Tasks[selectedTaskRow-1]
 			s.Tasks = append(s.Tasks[:selectedTaskRow-1], s.Tasks[selectedTaskRow:]...)
+
+			// Decrement TaskCount for the associated image
+			for _, img := range s.Images {
+				if img.ID == deletedTask.ImgIDs {
+					img.TaskCount--
+					break
+				}
+			}
+
 			selectedTaskRow = -1
 			taskList.Refresh()
+			imageList.Refresh()
 			s.Log("Task deleted.")
 			return
 		}
 		if selectedImgRow > 0 && selectedImgRow <= len(s.Images) {
+			deletedImgID := s.Images[selectedImgRow-1].ID
 			s.Images = append(s.Images[:selectedImgRow-1], s.Images[selectedImgRow:]...)
+
+			// Remove all tasks associated with this image
+			newTasks := []*TaskInfo{}
+			for _, t := range s.Tasks {
+				if t.ImgIDs != deletedImgID {
+					newTasks = append(newTasks, t)
+				}
+			}
+			s.Tasks = newTasks
+
 			selectedImgRow = -1
 			imageList.Refresh()
+			taskList.Refresh()
 			s.Log("Image deleted.")
 			return
 		}
@@ -269,19 +304,4 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	mainSplit.Offset = 0.7
 
 	return mainSplit
-}
-
-func (s *AppState) AddImages(paths []string) {
-	for _, p := range paths {
-		info, err := os.Stat(p)
-		if err != nil {
-			continue
-		}
-		s.Images = append(s.Images, &ImageInfo{
-			ID:       fmt.Sprintf("%d", len(s.Images)+1),
-			FileName: filepath.Base(p),
-			FullPath: p,
-			SizeMB:   float64(info.Size()) / 1024 / 1024,
-		})
-	}
 }

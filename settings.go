@@ -23,17 +23,21 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 	outputDirEntry := widget.NewEntry()
 	outputDirEntry.SetText(state.Config.OutputDir)
 
-	defPromptEntry := widget.NewMultiLineEntry()
+	defPromptEntry := NewTabbableEntry()
 	defPromptEntry.SetText(state.Config.DefaultPrompt)
+	defPromptEntry.Wrapping = fyne.TextWrapWord
 
-	defNegEntry := widget.NewMultiLineEntry()
+	defNegEntry := NewTabbableEntry()
 	defNegEntry.SetText(state.Config.DefaultNegPrompt)
+	defNegEntry.Wrapping = fyne.TextWrapWord
 
-	encourageEdtEntry := widget.NewMultiLineEntry()
+	encourageEdtEntry := NewTabbableEntry()
 	encourageEdtEntry.SetText(state.Config.EncourageEdt)
+	encourageEdtEntry.Wrapping = fyne.TextWrapWord
 
-	encourageGenEntry := widget.NewMultiLineEntry()
+	encourageGenEntry := NewTabbableEntry()
 	encourageGenEntry.SetText(state.Config.EncourageGen)
+	encourageGenEntry.Wrapping = fyne.TextWrapWord
 
 	debugCheck := widget.NewCheck("Debug Mode", func(b bool) {})
 	debugCheck.SetChecked(state.Config.Debug)
