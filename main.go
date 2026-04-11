@@ -22,6 +22,9 @@ type AppState struct {
 	LogScroll  *container.Scroll
 	Window     fyne.Window
 
+	BatchProgressBar *widget.ProgressBar
+	BatchStatusLabel *widget.Label
+
 	DeleteHandler   func()
 	OnImagesUpdated func()
 	OnTasksUpdated  func()
@@ -72,24 +75,46 @@ func main() {
 
 	// Background Monitoring
 	go func() {
-		ticker := time.NewTicker(2 * time.Minute)
+		const interval = 2 * time.Minute
+		nextCheck := time.Now().Add(interval)
+		ticker := time.NewTicker(1 * time.Second)
 		for range ticker.C {
 			if len(state.BatchJobs) == 0 {
+				if state.BatchProgressBar != nil {
+					fyne.Do(func() {
+						state.BatchProgressBar.SetValue(0)
+						state.BatchStatusLabel.SetText("No active batch jobs.")
+					})
+				}
 				continue
 			}
-			state.Log("Checking batch statuses...")
-			for _, job := range state.BatchJobs {
-				if job.Status == "SUCCEEDED" || job.Status == "FAILED" || job.Status == "CANCELLED" {
-					continue
+
+			remaining := time.Until(nextCheck)
+			if remaining <= 0 {
+				state.Log("Checking batch statuses...")
+				for _, job := range state.BatchJobs {
+					if job.Status == "SUCCEEDED" || job.Status == "FAILED" || job.Status == "CANCELLED" {
+						continue
+					}
+					err := state.CheckBatchStatus(job)
+					if err != nil {
+						state.Log("Status check error: " + err.Error())
+					}
 				}
-				err := state.CheckBatchStatus(job)
-				if err != nil {
-					state.Log("Status check error: " + err.Error())
-				}
+				fyne.Do(func() {
+					batchesTab.Refresh()
+				})
+				nextCheck = time.Now().Add(interval)
+				remaining = interval
 			}
-			fyne.Do(func() {
-				batchesTab.Refresh()
-			})
+
+			if state.BatchProgressBar != nil {
+				fyne.Do(func() {
+					elapsed := interval - remaining
+					state.BatchProgressBar.SetValue(float64(elapsed) / float64(interval))
+					state.BatchStatusLabel.SetText(fmt.Sprintf("Next status check in %d seconds...", int(remaining.Seconds())))
+				})
+			}
 		}
 	}()
 

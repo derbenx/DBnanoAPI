@@ -69,12 +69,20 @@ type ImageConfig struct {
 	ImageSize   string `json:"imageSize,omitempty"`
 }
 
-var ModelMapping = map[string]string{
-	"Nano Flash":   "gemini-2.5-flash-image",
-	"Nano Pro":     "gemini-3-pro-image-preview",
-	"Nano 2":       "gemini-3.1-flash-image-preview",
-	"Imagen":       "imagen-4.0-generate-001",
-	"Imagen Ultra": "imagen-4.0-ultra-generate-001",
+func (s *AppState) GetModelID(agent string) string {
+	switch agent {
+	case "Nano Flash":
+		return s.Config.ModelNanoFlash
+	case "Nano Pro":
+		return s.Config.ModelNanoPro
+	case "Nano 2":
+		return s.Config.ModelNano2
+	case "Imagen":
+		return s.Config.ModelImagen
+	case "Imagen Ultra":
+		return s.Config.ModelImagenUltra
+	}
+	return agent // Fallback to raw if not matched
 }
 
 func (s *AppState) CalculateCost(agent, size string) float64 {
@@ -114,12 +122,19 @@ func (s *AppState) CalculateCost(agent, size string) float64 {
 }
 
 func (s *AppState) RunTask(task *TaskInfo) error {
+	// Check file existence
+	if task.SourcePath != "" && task.SourcePath != "<GENERATE>" {
+		paths := strings.Split(task.SourcePath, "|")
+		for _, p := range paths {
+			if _, err := os.Stat(p); os.IsNotExist(err) {
+				return fmt.Errorf("file not found: %s", p)
+			}
+		}
+	}
+
 	task.Cost = s.CalculateCost(task.Agent, task.Size)
 
-	modelID := ModelMapping[task.Agent]
-	if modelID == "" {
-		modelID = task.Agent // Fallback to raw if not found
-	}
+	modelID := s.GetModelID(task.Agent)
 
 	var url string
 	var reqBody []byte
@@ -157,11 +172,20 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 		return nil
 	}
 
-	modelName := tasks[0].Agent
-	modelID := ModelMapping[modelName]
-	if modelID == "" {
-		modelID = modelName
+	// Check file existence for all tasks
+	for _, t := range tasks {
+		if t.SourcePath != "" && t.SourcePath != "<GENERATE>" {
+			paths := strings.Split(t.SourcePath, "|")
+			for _, p := range paths {
+				if _, err := os.Stat(p); os.IsNotExist(err) {
+					return fmt.Errorf("task %d: file not found: %s", t.ID, p)
+				}
+			}
+		}
 	}
+
+	modelName := tasks[0].Agent
+	modelID := s.GetModelID(modelName)
 
 	// 1. Create JSONL data
 	var buf bytes.Buffer

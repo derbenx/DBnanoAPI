@@ -7,29 +7,47 @@ import (
 )
 
 func makeBatchesTab(state *AppState) fyne.CanvasObject {
-	batchTable := widget.NewTable(
-		func() (int, int) { return len(state.BatchJobs) + 1, 4 },
-		func() fyne.CanvasObject { return widget.NewLabel("Header") },
-		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			label := cell.(*widget.Label)
-			if id.Row == 0 {
-				headers := []string{"JobID", "Status", "Submitted", "Progress"}
-				label.SetText(headers[id.Col])
-				return
-			}
-			job := state.BatchJobs[id.Row-1]
-			switch id.Col {
-			case 0:
-				label.SetText(job.JobID)
-			case 1:
-				label.SetText(job.Status)
-			case 2:
-				label.SetText(job.SubmittedAt.Format("15:04:05"))
-			case 3:
-				label.SetText(job.Progress)
-			}
+	batchList := widget.NewList(
+		func() int { return len(state.BatchJobs) },
+		func() fyne.CanvasObject {
+			jobID := widget.NewLabel("")
+			status := widget.NewLabel("")
+			submitted := widget.NewLabel("")
+			progress := widget.NewLabel("")
+
+			content := container.NewHBox(
+				container.NewStack(jobID),
+				container.NewStack(status),
+				container.NewStack(submitted),
+				container.NewStack(progress),
+			)
+			content.Objects[0].(*fyne.Container).SetMinSize(fyne.NewSize(250, 0))
+			content.Objects[1].(*fyne.Container).SetMinSize(fyne.NewSize(150, 0))
+			content.Objects[2].(*fyne.Container).SetMinSize(fyne.NewSize(100, 0))
+			content.Objects[3].(*fyne.Container).SetMinSize(fyne.NewSize(80, 0))
+
+			return content
+		},
+		func(id widget.ListItemID, cell fyne.CanvasObject) {
+			job := state.BatchJobs[id]
+			hbox := cell.(*fyne.Container)
+			hbox.Objects[0].(*fyne.Container).Objects[0].(*widget.Label).SetText(job.JobID)
+			hbox.Objects[1].(*fyne.Container).Objects[0].(*widget.Label).SetText(job.Status)
+			hbox.Objects[2].(*fyne.Container).Objects[0].(*widget.Label).SetText(job.SubmittedAt.Format("15:04:05"))
+			hbox.Objects[3].(*fyne.Container).Objects[0].(*widget.Label).SetText(job.Progress)
 		},
 	)
+
+	headers := container.NewHBox(
+		container.NewStack(widget.NewLabel("JobID")),
+		container.NewStack(widget.NewLabel("Status")),
+		container.NewStack(widget.NewLabel("Submitted")),
+		container.NewStack(widget.NewLabel("Progress")),
+	)
+	headers.Objects[0].(*fyne.Container).SetMinSize(fyne.NewSize(250, 0))
+	headers.Objects[1].(*fyne.Container).SetMinSize(fyne.NewSize(150, 0))
+	headers.Objects[2].(*fyne.Container).SetMinSize(fyne.NewSize(100, 0))
+	headers.Objects[3].(*fyne.Container).SetMinSize(fyne.NewSize(80, 0))
 
 	clearBtn := widget.NewButton("Clear Completed", func() {
 		newJobs := []*BatchJob{}
@@ -39,12 +57,23 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 			}
 		}
 		state.BatchJobs = newJobs
-		batchTable.Refresh()
+		batchList.Refresh()
 		state.Log("Cleared completed batch jobs.")
 	})
 
-	tableScroll := container.NewVScroll(batchTable)
-	tableScroll.SetMinSize(fyne.NewSize(0, 400))
+	state.BatchProgressBar = widget.NewProgressBar()
+	state.BatchProgressBar.Min = 0
+	state.BatchProgressBar.Max = 1
+	state.BatchStatusLabel = widget.NewLabel("No active batch jobs.")
 
-	return container.NewBorder(nil, clearBtn, nil, nil, tableScroll)
+	scroll := container.NewHScroll(container.NewBorder(headers, nil, nil, nil, batchList))
+	scroll.SetMinSize(fyne.NewSize(0, 400))
+
+	bottom := container.NewVBox(
+		state.BatchStatusLabel,
+		state.BatchProgressBar,
+		clearBtn,
+	)
+
+	return container.NewBorder(nil, bottom, nil, nil, scroll)
 }

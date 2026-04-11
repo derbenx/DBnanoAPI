@@ -20,6 +20,12 @@ type Config struct {
 	TopP             float32         `json:"top_p"`
 	TopK             int             `json:"top_k"`
 	MaxOutputTokens  int             `json:"max_output_tokens"`
+
+	ModelNanoFlash   string `json:"model_nano_flash"`
+	ModelNanoPro     string `json:"model_nano_pro"`
+	ModelNano2       string `json:"model_nano_2"`
+	ModelImagen      string `json:"model_imagen"`
+	ModelImagenUltra string `json:"model_imagen_ultra"`
 }
 
 type ImageInfo struct {
