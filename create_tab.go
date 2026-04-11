@@ -18,6 +18,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var selectedImgID string
 	var selectedTaskID int = -1
 
+	fixedWidth := func(obj fyne.CanvasObject, width float32) fyne.CanvasObject {
+		rect := canvas.NewRectangle(nil)
+		rect.SetMinSize(fyne.NewSize(width, 0))
+		return container.NewStack(rect, obj)
+	}
+
 	// Pre-declare components
 	var imageList *widget.List
 	var taskList *widget.List
@@ -48,19 +54,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			name.Truncation = fyne.TextTruncateEllipsis
 
 			content := container.NewHBox(
-				container.NewStack(check),
-				container.NewStack(id),
-				container.NewStack(size),
-				container.NewStack(tasks),
-				container.NewStack(name),
+				fixedWidth(check, 30),
+				fixedWidth(id, 30),
+				fixedWidth(size, 60),
+				fixedWidth(tasks, 50),
+				fixedWidth(name, 400),
 			)
-			// Match header widths
-			content.Objects[0].(*fyne.Container).SetMinSize(fyne.NewSize(30, 0))
-			content.Objects[1].(*fyne.Container).SetMinSize(fyne.NewSize(30, 0))
-			content.Objects[2].(*fyne.Container).SetMinSize(fyne.NewSize(60, 0))
-			content.Objects[3].(*fyne.Container).SetMinSize(fyne.NewSize(50, 0))
-			content.Objects[4].(*fyne.Container).SetMinSize(fyne.NewSize(400, 0))
-
 			return newTappableListItem(content, 0, nil, nil)
 		},
 		func(id widget.ListItemID, cell fyne.CanvasObject) {
@@ -69,16 +68,16 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			img := s.Images[id]
 
 			hbox := item.content.(*fyne.Container)
-			check := hbox.Objects[0].(*fyne.Container).Objects[0].(*widget.Check)
+			check := hbox.Objects[0].(*fyne.Container).Objects[1].(*widget.Check)
 			check.Checked = img.Selected
 			check.OnChanged = func(b bool) {
 				img.Selected = b
 			}
 
-			hbox.Objects[1].(*fyne.Container).Objects[0].(*widget.Label).SetText(img.ID)
-			hbox.Objects[2].(*fyne.Container).Objects[0].(*widget.Label).SetText(fmt.Sprintf("%.2f", img.SizeMB))
-			hbox.Objects[3].(*fyne.Container).Objects[0].(*widget.Label).SetText(fmt.Sprintf("%d", img.TaskCount))
-			hbox.Objects[4].(*fyne.Container).Objects[0].(*widget.Label).SetText(img.FileName)
+			hbox.Objects[1].(*fyne.Container).Objects[1].(*widget.Label).SetText(img.ID)
+			hbox.Objects[2].(*fyne.Container).Objects[1].(*widget.Label).SetText(fmt.Sprintf("%.2f", img.SizeMB))
+			hbox.Objects[3].(*fyne.Container).Objects[1].(*widget.Label).SetText(fmt.Sprintf("%d", img.TaskCount))
+			hbox.Objects[4].(*fyne.Container).Objects[1].(*widget.Label).SetText(img.FileName)
 
 			item.onTapped = func(id widget.ListItemID) {
 				imageList.Select(id)
@@ -140,19 +139,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			prompt.Truncation = fyne.TextTruncateEllipsis
 
 			content := container.NewHBox(
-				container.NewStack(id),
-				container.NewStack(agent),
-				container.NewStack(status),
-				container.NewStack(cost),
-				container.NewStack(prompt),
+				fixedWidth(id, 60),
+				fixedWidth(agent, 120),
+				fixedWidth(status, 100),
+				fixedWidth(cost, 80),
+				fixedWidth(prompt, 500),
 			)
-			// Match header widths
-			content.Objects[0].(*fyne.Container).SetMinSize(fyne.NewSize(60, 0))
-			content.Objects[1].(*fyne.Container).SetMinSize(fyne.NewSize(120, 0))
-			content.Objects[2].(*fyne.Container).SetMinSize(fyne.NewSize(100, 0))
-			content.Objects[3].(*fyne.Container).SetMinSize(fyne.NewSize(80, 0))
-			content.Objects[4].(*fyne.Container).SetMinSize(fyne.NewSize(500, 0))
-
 			return newTappableListItem(content, 0, nil, nil)
 		},
 		func(id widget.ListItemID, cell fyne.CanvasObject) {
@@ -161,15 +153,15 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			task := s.Tasks[id]
 
 			hbox := item.content.(*fyne.Container)
-			hbox.Objects[0].(*fyne.Container).Objects[0].(*widget.Label).SetText(task.ImgIDs)
-			hbox.Objects[1].(*fyne.Container).Objects[0].(*widget.Label).SetText(task.Agent)
+			hbox.Objects[0].(*fyne.Container).Objects[1].(*widget.Label).SetText(task.ImgIDs)
+			hbox.Objects[1].(*fyne.Container).Objects[1].(*widget.Label).SetText(task.Agent)
 			stat := task.Status
 			if task.Disabled {
 				stat += " (Off)"
 			}
-			hbox.Objects[2].(*fyne.Container).Objects[0].(*widget.Label).SetText(stat)
-			hbox.Objects[3].(*fyne.Container).Objects[0].(*widget.Label).SetText(fmt.Sprintf("$%.4f", task.Cost))
-			hbox.Objects[4].(*fyne.Container).Objects[0].(*widget.Label).SetText(task.Prompt)
+			hbox.Objects[2].(*fyne.Container).Objects[1].(*widget.Label).SetText(stat)
+			hbox.Objects[3].(*fyne.Container).Objects[1].(*widget.Label).SetText(fmt.Sprintf("$%.4f", task.Cost))
+			hbox.Objects[4].(*fyne.Container).Objects[1].(*widget.Label).SetText(task.Prompt)
 
 			item.onTapped = func(id widget.ListItemID) {
 				taskList.Select(id)
@@ -532,19 +524,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	)
 
 	imageHeaders := container.NewHBox(
-		container.NewStack(widget.NewLabel("Sel")),
-		container.NewStack(widget.NewLabel("#")),
-		container.NewStack(widget.NewLabel("MBs")),
-		container.NewStack(widget.NewLabel("Tasks")),
-		container.NewStack(widget.NewLabel("Image")),
+		fixedWidth(widget.NewLabel("Sel"), 30),
+		fixedWidth(widget.NewLabel("#"), 30),
+		fixedWidth(widget.NewLabel("MBs"), 60),
+		fixedWidth(widget.NewLabel("Tasks"), 50),
+		fixedWidth(widget.NewLabel("Image"), 400),
 	)
-	// Apply width to headers
-	imageHeaders.Objects[0].(*fyne.Container).SetMinSize(fyne.NewSize(30, 0))
-	imageHeaders.Objects[1].(*fyne.Container).SetMinSize(fyne.NewSize(30, 0))
-	imageHeaders.Objects[2].(*fyne.Container).SetMinSize(fyne.NewSize(60, 0))
-	imageHeaders.Objects[3].(*fyne.Container).SetMinSize(fyne.NewSize(50, 0))
-	imageHeaders.Objects[4].(*fyne.Container).SetMinSize(fyne.NewSize(400, 0))
-
 	imageScroll := container.NewHScroll(container.NewBorder(imageHeaders, nil, nil, nil, imageList))
 	imageScroll.SetMinSize(fyne.NewSize(400, 0))
 
@@ -552,18 +537,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	topHalf.Offset = 0.5
 
 	taskHeaders := container.NewHBox(
-		container.NewStack(widget.NewLabel("Img")),
-		container.NewStack(widget.NewLabel("Agent")),
-		container.NewStack(widget.NewLabel("Status")),
-		container.NewStack(widget.NewLabel("Cost")),
-		container.NewStack(widget.NewLabel("Prompt")),
+		fixedWidth(widget.NewLabel("Img"), 60),
+		fixedWidth(widget.NewLabel("Agent"), 120),
+		fixedWidth(widget.NewLabel("Status"), 100),
+		fixedWidth(widget.NewLabel("Cost"), 80),
+		fixedWidth(widget.NewLabel("Prompt"), 500),
 	)
-	taskHeaders.Objects[0].(*fyne.Container).SetMinSize(fyne.NewSize(60, 0))
-	taskHeaders.Objects[1].(*fyne.Container).SetMinSize(fyne.NewSize(120, 0))
-	taskHeaders.Objects[2].(*fyne.Container).SetMinSize(fyne.NewSize(100, 0))
-	taskHeaders.Objects[3].(*fyne.Container).SetMinSize(fyne.NewSize(80, 0))
-	taskHeaders.Objects[4].(*fyne.Container).SetMinSize(fyne.NewSize(500, 0))
-
 	taskScroll := container.NewHScroll(container.NewBorder(taskHeaders, nil, nil, nil, taskList))
 	taskScroll.SetMinSize(fyne.NewSize(400, 140))
 
