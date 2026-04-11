@@ -106,7 +106,7 @@ func main() {
 	})
 
 	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
-		if k.Name == fyne.KeyDelete {
+		if k.Name == fyne.KeyDelete || k.Name == fyne.KeyBackspace {
 			// Don't delete items if user is typing in a text field
 			focused := w.Canvas().Focused()
 			if focused != nil {

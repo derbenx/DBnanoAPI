@@ -40,8 +40,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	imageRTC = NewRightClickTable(
 		func() (int, int) { return len(s.Images) + 1, 5 },
-		func() fyne.CanvasObject {
-			l := NewRightClickLabel("")
+		func(t *widget.Table) fyne.CanvasObject {
+			l := NewRightClickLabel("", t)
 			l.OnRightClick = func(id widget.TableCellID, pos fyne.Position) {
 				if id.Row == 0 {
 					return
@@ -111,6 +111,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	imageList.SetColumnWidth(3, 100)
 	imageList.SetColumnWidth(4, 200)
 
+	imageList.SelectionMode = widget.TableSelectionRow
+
 	imageList.OnSelected = func(id widget.TableCellID) {
 		selectedImgRow = id.Row
 		selectedTaskRow = -1 // Clear other selection
@@ -125,8 +127,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	taskRTC = NewRightClickTable(
 		func() (int, int) { return len(s.Tasks) + 1, 6 },
-		func() fyne.CanvasObject {
-			l := NewRightClickLabel("")
+		func(t *widget.Table) fyne.CanvasObject {
+			l := NewRightClickLabel("", t)
 			l.OnRightClick = func(id widget.TableCellID, pos fyne.Position) {
 				if id.Row == 0 {
 					return
@@ -188,6 +190,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	taskList.SetColumnWidth(3, 50)
 	taskList.SetColumnWidth(4, 100)
 	taskList.SetColumnWidth(5, 300)
+
+	taskList.SelectionMode = widget.TableSelectionRow
 
 	taskList.OnSelected = func(id widget.TableCellID) {
 		selectedTaskRow = id.Row
@@ -360,6 +364,13 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			SourcePath:     path,
 		})
 		taskList.Refresh()
+
+		// Update widths
+		data := [][]string{{"Img", "Agent", "Res", "Ratio", "Status", "Prompt"}}
+		for _, t := range s.Tasks {
+			data = append(data, []string{t.ImgIDs, t.Agent, t.Size, t.Ratio, t.Status, t.Prompt})
+		}
+		updateColumnWidths(taskList, data)
 	})
 
 	runBtn := widget.NewButton("RUN TASKS", func() {
@@ -452,7 +463,41 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	middle := container.NewBorder(btnBox, nil, nil, nil, taskTableScroll)
 	right := container.NewVScroll(taskEditor)
 
+	updateColumnWidths := func(t *widget.Table, data [][]string) {
+		for col := 0; col < len(data[0]); col++ {
+			max := 0.0
+			for row := 0; row < len(data); row++ {
+				l := float64(len(data[row][col])) * 8.0 // Rough estimate
+				if l > max {
+					max = l
+				}
+			}
+			if max < 30 {
+				max = 30
+			}
+			if max > 400 {
+				max = 400
+			}
+			t.SetColumnWidth(col, float32(max))
+		}
+	}
+
 	s.OnImagesUpdated = func() {
+		// Calculate widths
+		if len(s.Images) > 0 {
+			data := [][]string{{"#", "MBs", "tasks", "Image", "Path"}}
+			for _, img := range s.Images {
+				data = append(data, []string{
+					img.ID,
+					fmt.Sprintf("%.2f", img.SizeMB),
+					fmt.Sprintf("%d", img.TaskCount),
+					img.FileName,
+					img.FullPath,
+				})
+			}
+			updateColumnWidths(imageList, data)
+		}
+
 		imageList.Refresh()
 		// Auto-select first image if nothing selected
 		if selectedImgRow == -1 && len(s.Images) > 0 {
