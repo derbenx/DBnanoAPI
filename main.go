@@ -28,7 +28,7 @@ type AppState struct {
 }
 
 func main() {
-	a := app.New()
+	a := app.NewWithID("com.nanogo.editor")
 	w := a.NewWindow("Gemini 2026 Pro Editor (NanoGo)")
 	w.Resize(fyne.NewSize(950, 700))
 
