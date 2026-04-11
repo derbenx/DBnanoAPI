@@ -154,12 +154,12 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 	})
 
 	form := widget.NewForm(
-		widget.NewFormItem("Gemini API Key", container.NewBorder(nil, nil, nil, testBtn, apiKeyEntry)),
-		widget.NewFormItem("Output Directory", container.NewBorder(nil, nil, nil, outputDirReset, outputDirEntry)),
-		widget.NewFormItem("Default Prompt", container.NewBorder(nil, nil, nil, defPromptReset, defPromptEntry)),
-		widget.NewFormItem("Default Negative Prompt", container.NewBorder(nil, nil, nil, defNegReset, defNegEntry)),
-		widget.NewFormItem("Encourage (Edit)", container.NewBorder(nil, nil, nil, encEdtReset, encourageEdtEntry)),
-		widget.NewFormItem("Encourage (Generate)", container.NewBorder(nil, nil, nil, encGenReset, encourageGenEntry)),
+		widget.NewFormItem("Gemini API Key", container.NewHBox(apiKeyEntry, testBtn)),
+		widget.NewFormItem("Output Directory", container.NewHBox(outputDirEntry, outputDirReset)),
+		widget.NewFormItem("Default Prompt", container.NewHBox(defPromptEntry, defPromptReset)),
+		widget.NewFormItem("Default Negative Prompt", container.NewHBox(defNegEntry, defNegReset)),
+		widget.NewFormItem("Encourage (Edit)", container.NewHBox(encourageEdtEntry, encEdtReset)),
+		widget.NewFormItem("Encourage (Generate)", container.NewHBox(encourageGenEntry, encGenReset)),
 		widget.NewFormItem("", container.NewHBox(debugCheck, debugReset)),
 	)
 
@@ -175,11 +175,11 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 	modelBox := container.NewVBox()
 	modelBox.Add(widget.NewLabelWithStyle("Model Endpoints", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	modelBox.Add(widget.NewForm(
-		widget.NewFormItem("Nano Flash", container.NewBorder(nil, nil, nil, nanoFlashReset, nanoFlashEntry)),
-		widget.NewFormItem("Nano Pro", container.NewBorder(nil, nil, nil, nanoProReset, nanoProEntry)),
-		widget.NewFormItem("Nano 2", container.NewBorder(nil, nil, nil, nano2Reset, nano2Entry)),
-		widget.NewFormItem("Imagen", container.NewBorder(nil, nil, nil, imagenReset, imagenEntry)),
-		widget.NewFormItem("Imagen Ultra", container.NewBorder(nil, nil, nil, imagenUltraReset, imagenUltraEntry)),
+		widget.NewFormItem("Nano Flash", container.NewHBox(nanoFlashEntry, nanoFlashReset)),
+		widget.NewFormItem("Nano Pro", container.NewHBox(nanoProEntry, nanoProReset)),
+		widget.NewFormItem("Nano 2", container.NewHBox(nano2Entry, nano2Reset)),
+		widget.NewFormItem("Imagen", container.NewHBox(imagenEntry, imagenReset)),
+		widget.NewFormItem("Imagen Ultra", container.NewHBox(imagenUltraEntry, imagenUltraReset)),
 	))
 
 	safetyBox := container.NewVBox()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var selectedTaskID int = -1
 
 	fixedWidth := func(obj fyne.CanvasObject, width float32) fyne.CanvasObject {
-		rect := canvas.NewRectangle(nil)
+		rect := canvas.NewRectangle(color.Transparent)
 		rect.SetMinSize(fyne.NewSize(width, 0))
 		return container.NewStack(rect, obj)
 	}
@@ -35,6 +36,18 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var modeSelect *widget.RadioGroup
 	var sourceIDsEntry *widget.Entry
 	var costLabel *widget.Label
+	var runBtn *widget.Button
+
+	updateRunBtnLabel := func() {
+		if runBtn == nil || modeSelect == nil {
+			return
+		}
+		if modeSelect.Selected == "Batch" {
+			runBtn.SetText("RUN BATCH")
+		} else {
+			runBtn.SetText("RUN IMMEDIATE")
+		}
+	}
 
 	// --- Component Initialization ---
 
@@ -178,7 +191,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					}),
 					fyne.NewMenuItem("Duplicate Task", func() {
 						newTask := *task // Shallow copy is fine as fields are primitive or string
-						newTask.ID = len(s.Tasks) + 1
+						newTask.ID = s.NextTaskID
+						s.NextTaskID++
 						newTask.Status = "Pending"
 						s.Tasks = append(s.Tasks, &newTask)
 						taskList.Refresh()
@@ -353,13 +367,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		s.GlobalMode = m
 		s.Log("Mode switched to: " + m)
 
-		if runBtn != nil {
-			if m == "Batch" {
-				runBtn.SetText("RUN BATCH")
-			} else {
-				runBtn.SetText("RUN IMMEDIATE")
-			}
-		}
+		updateRunBtnLabel()
 
 		for _, t := range s.Tasks {
 			t.Cost = s.CalculateCost(t.Agent, t.Size)
@@ -435,7 +443,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 
 		s.Tasks = append(s.Tasks, &TaskInfo{
-			ID:             len(s.Tasks) + 1,
+			ID:             s.NextTaskID,
 			ImgIDs:         strings.Join(imgIDs, "+"),
 			Agent:          agent,
 			Size:           size,
@@ -446,6 +454,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			NegativePrompt: negPromptEntry.Text,
 			SourcePath:     strings.Join(paths, "|"),
 		})
+		s.NextTaskID++
 
 		imageList.Refresh()
 		taskList.Refresh()
@@ -454,7 +463,6 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	})
 
-	var runBtn *widget.Button
 	runBtn = widget.NewButton("RUN IMMEDIATE", func() {
 		runBtn.Disable()
 		go func() {
@@ -526,6 +534,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			}
 		}()
 	})
+	updateRunBtnLabel()
 
 	// --- Layout Assembly ---
 
@@ -552,6 +561,25 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		if err != nil {
 			s.Log("Load failed: " + err.Error())
 		} else {
+			// Update IDs to prevent collisions
+			maxImg := 0
+			for _, img := range s.Images {
+				id := 0
+				fmt.Sscanf(img.ID, "%d", &id)
+				if id > maxImg {
+					maxImg = id
+				}
+			}
+			s.NextImageID = maxImg + 1
+
+			maxTask := 0
+			for _, t := range s.Tasks {
+				if t.ID > maxTask {
+					maxTask = t.ID
+				}
+			}
+			s.NextTaskID = maxTask + 1
+
 			imageList.Refresh()
 			taskList.Refresh()
 			if s.OnTasksUpdated != nil {
@@ -649,6 +677,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				}
 
 				selectedTaskID = -1
+				clearEditor()
 				taskList.Refresh()
 				imageList.Refresh()
 				if s.OnTasksUpdated != nil {

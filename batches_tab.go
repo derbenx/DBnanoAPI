@@ -1,6 +1,8 @@
 package main
 
 import (
+	"image/color"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
@@ -9,7 +11,7 @@ import (
 
 func makeBatchesTab(state *AppState) fyne.CanvasObject {
 	fixedWidth := func(obj fyne.CanvasObject, width float32) fyne.CanvasObject {
-		rect := canvas.NewRectangle(nil)
+		rect := canvas.NewRectangle(color.Transparent)
 		rect.SetMinSize(fyne.NewSize(width, 0))
 		return container.NewStack(rect, obj)
 	}

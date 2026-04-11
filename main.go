@@ -25,6 +25,9 @@ type AppState struct {
 	BatchProgressBar *widget.ProgressBar
 	BatchStatusLabel *widget.Label
 
+	NextImageID int
+	NextTaskID  int
+
 	DeleteHandler   func()
 	OnImagesUpdated func()
 	OnTasksUpdated  func()
@@ -43,9 +46,11 @@ func main() {
 	}
 
 	state := &AppState{
-		Config:     cfg,
-		GlobalMode: "Immediate",
-		Window:     w,
+		Config:      cfg,
+		GlobalMode:  "Immediate",
+		Window:      w,
+		NextImageID: 1,
+		NextTaskID:  1,
 	}
 
 	// Shared Log
@@ -202,10 +207,11 @@ func (s *AppState) AddImages(paths []string) {
 			continue
 		}
 		s.Images = append(s.Images, &ImageInfo{
-			ID:       fmt.Sprintf("%d", len(s.Images)+1),
+			ID:       fmt.Sprintf("%d", s.NextImageID),
 			FileName: filepath.Base(p),
 			FullPath: p,
 			SizeMB:   float64(info.Size()) / 1024 / 1024,
 		})
+		s.NextImageID++
 	}
 }
