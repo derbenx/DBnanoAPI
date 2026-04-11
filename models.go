@@ -28,6 +28,7 @@ type ImageInfo struct {
 	FullPath  string
 	SizeMB    float64
 	TaskCount int
+	Selected  bool // For checkbox selection
 }
 
 type TaskInfo struct {

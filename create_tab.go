@@ -15,34 +15,12 @@ import (
 )
 
 func (s *AppState) makeCreateTab() fyne.CanvasObject {
-	var selectedImgRows []int
-	var selectedImgRow int = -1
-	var selectedTaskRow int = -1
+	var selectedImgID string
+	var selectedTaskID int = -1
 
-	updateColumnWidths := func(t *widget.Table, data [][]string) {
-		for col := 0; col < len(data[0]); col++ {
-			max := 0.0
-			for row := 0; row < len(data); row++ {
-				l := float64(len(data[row][col])) * 8.0 // Rough estimate
-				if l > max {
-					max = l
-				}
-			}
-			if max < 30 {
-				max = 30
-			}
-			if max > 400 {
-				max = 400
-			}
-			t.SetColumnWidth(col, float32(max))
-		}
-	}
-
-	// Pre-declare components to resolve cross-references
-	var imageList *widget.Table
-	var taskList *widget.Table
-	var imageRTC *RightClickTable
-	var taskRTC *RightClickTable
+	// Pre-declare components
+	var imageList *widget.List
+	var taskList *widget.List
 	var preview *canvas.Image
 	var promptEntry *TabbableEntry
 	var negPromptEntry *TabbableEntry
@@ -58,27 +36,58 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	preview.FillMode = canvas.ImageFillContain
 	preview.SetMinSize(fyne.NewSize(300, 200))
 
-	imageRTC = NewRightClickTable(
-		func() (int, int) { return len(s.Images) + 1, 5 },
-		func(t *widget.Table) fyne.CanvasObject {
-			l := NewRightClickLabel("", t)
-			l.OnRightClick = func(id widget.TableCellID, pos fyne.Position) {
-				if id.Row == 0 {
-					return
-				}
+	// Image List
+	imageList = widget.NewList(
+		func() int { return len(s.Images) },
+		func() fyne.CanvasObject {
+			check := widget.NewCheck("", nil)
+			id := widget.NewLabel("")
+			size := widget.NewLabel("")
+			tasks := widget.NewLabel("")
+			name := widget.NewLabel("")
+			name.Truncation = fyne.TextTruncateEllipsis
+
+			content := container.NewGridWithColumns(5,
+				check,
+				id,
+				size,
+				tasks,
+				name,
+			)
+			return newTappableListItem(content, 0, nil, nil)
+		},
+		func(id widget.ListItemID, cell fyne.CanvasObject) {
+			item := cell.(*tappableListItem)
+			item.id = id
+			img := s.Images[id]
+
+			grid := item.content.(*fyne.Container)
+			check := grid.Objects[0].(*widget.Check)
+			check.Checked = img.Selected
+			check.OnChanged = func(b bool) {
+				img.Selected = b
+			}
+
+			grid.Objects[1].(*widget.Label).SetText(img.ID)
+			grid.Objects[2].(*widget.Label).SetText(fmt.Sprintf("%.2f", img.SizeMB))
+			grid.Objects[3].(*widget.Label).SetText(fmt.Sprintf("%d", img.TaskCount))
+			grid.Objects[4].(*widget.Label).SetText(img.FileName)
+
+			item.onTapped = func(id widget.ListItemID) {
+				imageList.Select(id)
+			}
+			item.onRightClick = func(id widget.ListItemID, pos fyne.Position) {
 				menu := fyne.NewMenu("",
 					fyne.NewMenuItem("Change Image", func() {
-						selectedImgRow = id.Row
 						fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 							if err == nil && reader != nil {
 								p := reader.URI().Path()
-								img := s.Images[id.Row-1]
+								img := s.Images[id]
 								img.FullPath = p
 								img.FileName = filepath.Base(p)
 								info, _ := os.Stat(p)
 								img.SizeMB = float64(info.Size()) / 1024 / 1024
 
-								// Update tasks that use this image
 								for _, t := range s.Tasks {
 									if t.ImgIDs == img.ID {
 										t.SourcePath = p
@@ -90,108 +99,68 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 						}, s.Window)
 						fd.Show()
 					}),
-					fyne.NewMenuItem("Select Multiple", func() {
-						alreadySelected := false
-						for _, r := range selectedImgRows {
-							if r == id.Row {
-								alreadySelected = true
-								break
-							}
-						}
-						if !alreadySelected {
-							selectedImgRows = append(selectedImgRows, id.Row)
-							imageList.Refresh()
-						}
-					}),
 					fyne.NewMenuItem("Delete", func() {
-						selectedImgRow = id.Row
-						if len(selectedImgRows) <= 1 {
-							selectedImgRows = []int{id.Row}
-						}
+						selectedImgID = s.Images[id].ID
 						s.DeleteHandler()
 					}),
 				)
-				widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(l), pos)
-			}
-			return l
-		},
-		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			label := cell.(*RightClickLabel)
-			label.id = id
-			if id.Row == 0 {
-				headers := []string{"#", "MBs", "tasks", "Image", "Path"}
-				label.SetText(headers[id.Col])
-				label.Importance = widget.HighImportance
-				label.TextStyle = fyne.TextStyle{Bold: true}
-				return
-			}
-			isSelected := false
-			for _, r := range selectedImgRows {
-				if r == id.Row {
-					isSelected = true
-					break
-				}
-			}
-			if isSelected {
-				label.Importance = widget.HighImportance
-				label.TextStyle = fyne.TextStyle{Bold: true, Italic: true}
-			} else {
-				label.Importance = widget.MediumImportance
-				label.TextStyle = fyne.TextStyle{}
-			}
-			img := s.Images[id.Row-1]
-			switch id.Col {
-			case 0:
-				label.SetText(img.ID)
-			case 1:
-				label.SetText(fmt.Sprintf("%.2f", img.SizeMB))
-			case 2:
-				label.SetText(fmt.Sprintf("%d", img.TaskCount))
-			case 3:
-				label.SetText(img.FileName)
-			case 4:
-				label.SetText(img.FullPath)
+				widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(item), pos)
 			}
 		},
 	)
-	imageList = imageRTC.Table
-	imageList.SetColumnWidth(0, 30)
-	imageList.SetColumnWidth(1, 50)
-	imageList.SetColumnWidth(2, 50)
-	imageList.SetColumnWidth(3, 100)
-	imageList.SetColumnWidth(4, 200)
 
-	imageList.OnSelected = func(id widget.TableCellID) {
-		// Standard selection
-		selectedImgRow = id.Row
+	imageList.OnSelected = func(id widget.ListItemID) {
+		img := s.Images[id]
+		selectedImgID = img.ID
+		selectedTaskID = -1
+		taskList.UnselectAll()
 
-		// AHK-like behavior: single click selects one, clearing others.
-		// Use right-click or a future modifier-key check for multi-select if needed.
-		// For now, let's allow standard Fyne multi-select if we can, but the user complained about selection issues.
-		// By default, just replace selection unless we implement a specific multi-select mode.
-		selectedImgRows = []int{id.Row}
-
-		selectedTaskRow = -1 // Clear other selection
-		imageList.Refresh()
-		taskList.Refresh()
-		if id.Row > 0 {
-			img := s.Images[id.Row-1]
-			if img.FullPath != "<GENERATE>" {
-				preview.File = img.FullPath
-				preview.Refresh()
-			}
+		if img.FullPath != "<GENERATE>" {
+			preview.File = img.FullPath
+			preview.Refresh()
 		}
 	}
 
-	taskRTC = NewRightClickTable(
-		func() (int, int) { return len(s.Tasks) + 1, 7 },
-		func(t *widget.Table) fyne.CanvasObject {
-			l := NewRightClickLabel("", t)
-			l.OnRightClick = func(id widget.TableCellID, pos fyne.Position) {
-				if id.Row == 0 {
-					return
-				}
-				task := s.Tasks[id.Row-1]
+	// Task List
+	taskList = widget.NewList(
+		func() int { return len(s.Tasks) },
+		func() fyne.CanvasObject {
+			id := widget.NewLabel("")
+			agent := widget.NewLabel("")
+			status := widget.NewLabel("")
+			cost := widget.NewLabel("")
+			prompt := widget.NewLabel("")
+			prompt.Truncation = fyne.TextTruncateEllipsis
+
+			content := container.NewGridWithColumns(5,
+				id,
+				agent,
+				status,
+				cost,
+				prompt,
+			)
+			return newTappableListItem(content, 0, nil, nil)
+		},
+		func(id widget.ListItemID, cell fyne.CanvasObject) {
+			item := cell.(*tappableListItem)
+			item.id = id
+			task := s.Tasks[id]
+
+			grid := item.content.(*fyne.Container)
+			grid.Objects[0].(*widget.Label).SetText(task.ImgIDs)
+			grid.Objects[1].(*widget.Label).SetText(task.Agent)
+			stat := task.Status
+			if task.Disabled {
+				stat += " (Off)"
+			}
+			grid.Objects[2].(*widget.Label).SetText(stat)
+			grid.Objects[3].(*widget.Label).SetText(fmt.Sprintf("$%.4f", task.Cost))
+			grid.Objects[4].(*widget.Label).SetText(task.Prompt)
+
+			item.onTapped = func(id widget.ListItemID) {
+				taskList.Select(id)
+			}
+			item.onRightClick = func(id widget.ListItemID, pos fyne.Position) {
 				toggleText := "Disable"
 				if task.Disabled {
 					toggleText = "Enable"
@@ -202,98 +171,46 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 						taskList.Refresh()
 					}),
 					fyne.NewMenuItem("Delete", func() {
-						selectedTaskRow = id.Row
+						selectedTaskID = task.ID
 						s.DeleteHandler()
 					}),
 				)
-				widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(l), pos)
-			}
-			return l
-		},
-		func(id widget.TableCellID, cell fyne.CanvasObject) {
-			label := cell.(*RightClickLabel)
-			label.id = id
-			if id.Row == 0 {
-				headers := []string{"Img", "Agent", "Res", "Ratio", "Status", "Cost", "Prompt"}
-				label.SetText(headers[id.Col])
-				label.Importance = widget.HighImportance
-				label.TextStyle = fyne.TextStyle{Bold: true}
-				return
-			}
-			if id.Row == selectedTaskRow {
-				label.Importance = widget.HighImportance
-				label.TextStyle = fyne.TextStyle{Bold: true, Italic: true}
-			} else {
-				label.Importance = widget.MediumImportance
-				label.TextStyle = fyne.TextStyle{}
-			}
-			task := s.Tasks[id.Row-1]
-			switch id.Col {
-			case 0:
-				label.SetText(task.ImgIDs)
-			case 1:
-				label.SetText(task.Agent)
-			case 2:
-				label.SetText(task.Size)
-			case 3:
-				label.SetText(task.Ratio)
-			case 4:
-				status := task.Status
-				if task.Disabled {
-					status += " (Off)"
-				}
-				label.SetText(status)
-			case 5:
-				label.SetText(fmt.Sprintf("$%.4f", task.Cost))
-			case 6:
-				label.SetText(task.Prompt)
+				widget.ShowPopUpMenuAtPosition(menu, fyne.CurrentApp().Driver().CanvasForObject(item), pos)
 			}
 		},
 	)
-	taskList = taskRTC.Table
-	taskList.SetColumnWidth(0, 50)
-	taskList.SetColumnWidth(1, 100)
-	taskList.SetColumnWidth(2, 50)
-	taskList.SetColumnWidth(3, 50)
-	taskList.SetColumnWidth(4, 100)
-	taskList.SetColumnWidth(5, 70)
-	taskList.SetColumnWidth(6, 300)
 
-	taskList.OnSelected = func(id widget.TableCellID) {
-		selectedTaskRow = id.Row
-		selectedImgRow = -1 // Clear other selection
-		selectedImgRows = nil
-		taskList.Refresh()
-		imageList.Refresh()
-		if id.Row > 0 && id.Row <= len(s.Tasks) {
-			task := s.Tasks[id.Row-1]
+	taskList.OnSelected = func(id widget.ListItemID) {
+		task := s.Tasks[id]
+		selectedTaskID = task.ID
+		selectedImgID = ""
+		imageList.UnselectAll()
 
-			// Block OnChanged listeners
-			oldP := promptEntry.OnChanged
-			oldN := negPromptEntry.OnChanged
-			oldT := tierSelect.OnChanged
-			oldR := ratioSelect.OnChanged
-			oldIDs := sourceIDsEntry.OnChanged
+		// Block OnChanged listeners
+		oldP := promptEntry.OnChanged
+		oldN := negPromptEntry.OnChanged
+		oldT := tierSelect.OnChanged
+		oldR := ratioSelect.OnChanged
+		oldIDs := sourceIDsEntry.OnChanged
 
-			promptEntry.OnChanged = nil
-			negPromptEntry.OnChanged = nil
-			tierSelect.OnChanged = nil
-			ratioSelect.OnChanged = nil
-			sourceIDsEntry.OnChanged = nil
+		promptEntry.OnChanged = nil
+		negPromptEntry.OnChanged = nil
+		tierSelect.OnChanged = nil
+		ratioSelect.OnChanged = nil
+		sourceIDsEntry.OnChanged = nil
 
-			sourceIDsEntry.SetText(task.ImgIDs)
-			promptEntry.SetText(task.Prompt)
-			negPromptEntry.SetText(task.NegativePrompt)
-			tierSelect.SetSelected(task.Agent + " " + task.Size)
-			ratioSelect.SetSelected(task.Ratio)
-			costLabel.SetText(fmt.Sprintf("$%.4f", task.Cost))
+		sourceIDsEntry.SetText(task.ImgIDs)
+		promptEntry.SetText(task.Prompt)
+		negPromptEntry.SetText(task.NegativePrompt)
+		tierSelect.SetSelected(task.Agent + " " + task.Size)
+		ratioSelect.SetSelected(task.Ratio)
+		costLabel.SetText(fmt.Sprintf("$%.4f", task.Cost))
 
-			promptEntry.OnChanged = oldP
-			negPromptEntry.OnChanged = oldN
-			tierSelect.OnChanged = oldT
-			ratioSelect.OnChanged = oldR
-			sourceIDsEntry.OnChanged = oldIDs
-		}
+		promptEntry.OnChanged = oldP
+		negPromptEntry.OnChanged = oldN
+		tierSelect.OnChanged = oldT
+		ratioSelect.OnChanged = oldR
+		sourceIDsEntry.OnChanged = oldIDs
 	}
 
 	// Task Editor Fields
@@ -318,13 +235,21 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	costLabel = widget.NewLabel("$0.00")
 
 	updateTaskFromUI := func() {
-		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
-			task := s.Tasks[selectedTaskRow-1]
+		var task *TaskInfo
+		if selectedTaskID != -1 {
+			for _, t := range s.Tasks {
+				if t.ID == selectedTaskID {
+					task = t
+					break
+				}
+			}
+		}
+
+		if task != nil {
 			task.ImgIDs = sourceIDsEntry.Text
 			task.Prompt = promptEntry.Text
 			task.NegativePrompt = negPromptEntry.Text
 
-			// Parse Tier
 			parts := strings.Split(tierSelect.Selected, " ")
 			if len(parts) >= 3 {
 				task.Agent = strings.Join(parts[:len(parts)-1], " ")
@@ -363,12 +288,21 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	modeSelect = widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(m string) {
 		s.GlobalMode = m
 		s.Log("Mode switched to: " + m)
-		// Update all task costs
 		for _, t := range s.Tasks {
 			t.Cost = s.CalculateCost(t.Agent, t.Size)
 		}
-		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
-			costLabel.SetText(fmt.Sprintf("$%.4f", s.Tasks[selectedTaskRow-1].Cost))
+
+		var task *TaskInfo
+		if selectedTaskID != -1 {
+			for _, t := range s.Tasks {
+				if t.ID == selectedTaskID {
+					task = t
+					break
+				}
+			}
+		}
+		if task != nil {
+			costLabel.SetText(fmt.Sprintf("$%.4f", task.Cost))
 		}
 		taskList.Refresh()
 		if s.OnTasksUpdated != nil {
@@ -393,34 +327,30 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		var imgIDs []string
 		var paths []string
 
-		rows := selectedImgRows
-		if len(rows) == 0 && selectedImgRow > 0 {
-			rows = []int{selectedImgRow}
-		}
-
-		if len(rows) > 0 {
-			for _, r := range rows {
-				if r <= 0 || r > len(s.Images) {
-					continue
-				}
-				img := s.Images[r-1]
+		for _, img := range s.Images {
+			if img.Selected {
 				imgIDs = append(imgIDs, img.ID)
 				paths = append(paths, img.FullPath)
 				img.TaskCount++
 			}
-		} else if len(s.Images) > 0 {
-			img := s.Images[0]
-			imgIDs = append(imgIDs, img.ID)
-			paths = append(paths, img.FullPath)
-			img.TaskCount++
+		}
+
+		if len(paths) == 0 && selectedImgID != "" {
+			for _, img := range s.Images {
+				if img.ID == selectedImgID {
+					imgIDs = append(imgIDs, img.ID)
+					paths = append(paths, img.FullPath)
+					img.TaskCount++
+					break
+				}
+			}
 		}
 
 		if len(paths) == 0 {
-			s.Log("Error: Add and select images first!")
+			s.Log("Error: Select images (checkbox) first!")
 			return
 		}
 
-		// Parse Tier
 		var agent, size string
 		parts := strings.Split(tierSelect.Selected, " ")
 		if len(parts) >= 3 {
@@ -449,13 +379,6 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		if s.OnTasksUpdated != nil {
 			s.OnTasksUpdated()
 		}
-
-		// Update widths
-		data := [][]string{{"Img", "Agent", "Res", "Ratio", "Status", "Cost", "Prompt"}}
-		for _, t := range s.Tasks {
-			data = append(data, []string{t.ImgIDs, t.Agent, t.Size, t.Ratio, t.Status, fmt.Sprintf("%.4f", t.Cost), t.Prompt})
-		}
-		updateColumnWidths(taskList, data)
 	})
 
 	runBtn := widget.NewButton("RUN TASKS", func() {
@@ -579,36 +502,34 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		widget.NewLabel("Cost:"), costLabel,
 	)
 
-	imgScroll := container.NewVScroll(imageRTC)
-	topHalf := container.NewHSplit(imgScroll, preview)
+	imageHeaders := container.NewGridWithColumns(5,
+		widget.NewLabel("Sel"),
+		widget.NewLabel("#"),
+		widget.NewLabel("MBs"),
+		widget.NewLabel("tasks"),
+		widget.NewLabel("Image"),
+	)
+	imageBox := container.NewBorder(imageHeaders, nil, nil, nil, imageList)
+
+	topHalf := container.NewHSplit(imageBox, preview)
 	topHalf.Offset = 0.5
 
-	taskTableScroll := container.NewVScroll(taskRTC)
-	taskTableScroll.SetMinSize(fyne.NewSize(0, 140))
+	taskHeaders := container.NewGridWithColumns(5,
+		widget.NewLabel("Img"),
+		widget.NewLabel("Agent"),
+		widget.NewLabel("Status"),
+		widget.NewLabel("Cost"),
+		widget.NewLabel("Prompt"),
+	)
+	taskBox := container.NewBorder(taskHeaders, nil, nil, nil, taskList)
 
-	leftBottom := container.NewBorder(nil, btnBox, nil, nil, taskTableScroll)
+	leftBottom := container.NewBorder(nil, btnBox, nil, nil, taskBox)
 	right := container.NewVScroll(taskEditor)
 
 	s.OnImagesUpdated = func() {
-		// Calculate widths
-		if len(s.Images) > 0 {
-			data := [][]string{{"#", "MBs", "tasks", "Image", "Path"}}
-			for _, img := range s.Images {
-				data = append(data, []string{
-					img.ID,
-					fmt.Sprintf("%.2f", img.SizeMB),
-					fmt.Sprintf("%d", img.TaskCount),
-					img.FileName,
-					img.FullPath,
-				})
-			}
-			updateColumnWidths(imageList, data)
-		}
-
 		imageList.Refresh()
-		// Auto-select first image if nothing selected
-		if selectedImgRow == -1 && len(s.Images) > 0 {
-			imageList.Select(widget.TableCellID{Row: 1, Col: 0})
+		if selectedImgID == "" && len(s.Images) > 0 {
+			imageList.Select(0)
 		}
 	}
 
@@ -625,66 +546,66 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	}
 
 	s.DeleteHandler = func() {
-		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
-			deletedTask := s.Tasks[selectedTaskRow-1]
-			s.Tasks = append(s.Tasks[:selectedTaskRow-1], s.Tasks[selectedTaskRow:]...)
-
-			// Update task counts for all images involved in this task
-			ids := strings.Split(deletedTask.ImgIDs, "+")
-			for _, id := range ids {
-				for _, img := range s.Images {
-					if img.ID == id {
-						img.TaskCount--
-						break
-					}
+		if selectedTaskID != -1 {
+			var idx = -1
+			for i, t := range s.Tasks {
+				if t.ID == selectedTaskID {
+					idx = i
+					break
 				}
 			}
+			if idx != -1 {
+				deletedTask := s.Tasks[idx]
+				s.Tasks = append(s.Tasks[:idx], s.Tasks[idx+1:]...)
 
-			selectedTaskRow = -1
-			taskList.Refresh()
-			imageList.Refresh()
-			if s.OnTasksUpdated != nil {
-				s.OnTasksUpdated()
+				ids := strings.Split(deletedTask.ImgIDs, "+")
+				for _, id := range ids {
+					for _, img := range s.Images {
+						if img.ID == id {
+							img.TaskCount--
+							break
+						}
+					}
+				}
+
+				selectedTaskID = -1
+				taskList.Refresh()
+				imageList.Refresh()
+				if s.OnTasksUpdated != nil {
+					s.OnTasksUpdated()
+				}
+				s.Log("Task deleted.")
 			}
-			s.Log("Task deleted.")
 			return
 		}
-		if len(selectedImgRows) > 0 {
-			// Sort in descending order to avoid index issues during deletion
-			for i := 0; i < len(selectedImgRows); i++ {
-				for j := i + 1; j < len(selectedImgRows); j++ {
-					if selectedImgRows[i] < selectedImgRows[j] {
-						selectedImgRows[i], selectedImgRows[j] = selectedImgRows[j], selectedImgRows[i]
-					}
+
+		if selectedImgID != "" {
+			var idx = -1
+			for i, img := range s.Images {
+				if img.ID == selectedImgID {
+					idx = i
+					break
 				}
 			}
-
-			for _, row := range selectedImgRows {
-				if row <= 0 || row > len(s.Images) {
-					continue
-				}
-				deletedImgID := s.Images[row-1].ID
-				s.Images = append(s.Images[:row-1], s.Images[row:]...)
+			if idx != -1 {
+				s.Images = append(s.Images[:idx], s.Images[idx+1:]...)
 
 				newTasks := []*TaskInfo{}
 				for _, t := range s.Tasks {
-					if !isIDInMergedID(deletedImgID, t.ImgIDs) {
+					if !isIDInMergedID(selectedImgID, t.ImgIDs) {
 						newTasks = append(newTasks, t)
 					}
 				}
 				s.Tasks = newTasks
+
+				selectedImgID = ""
+				imageList.Refresh()
+				taskList.Refresh()
+				if s.OnTasksUpdated != nil {
+					s.OnTasksUpdated()
+				}
+				s.Log("Image deleted.")
 			}
-			count := len(selectedImgRows)
-			selectedImgRow = -1
-			selectedImgRows = nil
-			imageList.Refresh()
-			taskList.Refresh()
-			if s.OnTasksUpdated != nil {
-				s.OnTasksUpdated()
-			}
-			s.Log(fmt.Sprintf("%d Images deleted.", count))
-			selectedImgRows = nil
-			return
 		}
 	}
 
