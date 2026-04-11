@@ -99,6 +99,10 @@ func main() {
 				state.AddImages([]string{uri.Path()})
 			}
 		}
+		// Refresh UI and selection
+		if state.OnImagesUpdated != nil {
+			state.OnImagesUpdated()
+		}
 	})
 
 	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
@@ -119,6 +123,7 @@ func main() {
 		}
 	})
 
+	w.CenterOnScreen()
 	w.ShowAndRun()
 }
 
@@ -176,8 +181,5 @@ func (s *AppState) AddImages(paths []string) {
 			FullPath: p,
 			SizeMB:   float64(info.Size()) / 1024 / 1024,
 		})
-	}
-	if s.OnImagesUpdated != nil {
-		s.OnImagesUpdated()
 	}
 }

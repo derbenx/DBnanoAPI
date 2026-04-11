@@ -85,8 +85,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			if id.Row == 0 {
 				headers := []string{"#", "MBs", "tasks", "Image", "Path"}
 				label.SetText(headers[id.Col])
+				label.Importance = widget.HighImportance
 				return
 			}
+			label.Importance = widget.MediumImportance
 			img := s.Images[id.Row-1]
 			switch id.Col {
 			case 0:
@@ -154,8 +156,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			if id.Row == 0 {
 				headers := []string{"Img", "Agent", "Res", "Ratio", "Status", "Prompt"}
 				label.SetText(headers[id.Col])
+				label.Importance = widget.HighImportance
 				return
 			}
+			label.Importance = widget.MediumImportance
 			task := s.Tasks[id.Row-1]
 			switch id.Col {
 			case 0:
@@ -178,6 +182,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		},
 	)
 	taskList = taskRTC.Table
+	taskList.SetColumnWidth(0, 50)
+	taskList.SetColumnWidth(1, 100)
+	taskList.SetColumnWidth(2, 50)
+	taskList.SetColumnWidth(3, 50)
+	taskList.SetColumnWidth(4, 100)
+	taskList.SetColumnWidth(5, 300)
 
 	taskList.OnSelected = func(id widget.TableCellID) {
 		selectedTaskRow = id.Row
@@ -433,16 +443,21 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	)
 
 	imgScroll := container.NewVScroll(imageRTC)
-	topHalf := container.New(layout.NewGridLayout(2), imgScroll, preview)
+	topHalf := container.NewHSplit(imgScroll, preview)
+	topHalf.Offset = 0.5
 
 	taskTableScroll := container.NewVScroll(taskRTC)
-	taskTableScroll.SetMinSize(fyne.NewSize(0, 150))
+	taskTableScroll.SetMinSize(fyne.NewSize(0, 200))
 
-	middle := container.NewVBox(btnBox, taskTableScroll)
+	middle := container.NewBorder(btnBox, nil, nil, nil, taskTableScroll)
 	right := container.NewVScroll(taskEditor)
 
 	s.OnImagesUpdated = func() {
 		imageList.Refresh()
+		// Auto-select first image if nothing selected
+		if selectedImgRow == -1 && len(s.Images) > 0 {
+			imageList.Select(widget.TableCellID{Row: 1, Col: 0})
+		}
 	}
 
 	s.DeleteHandler = func() {
