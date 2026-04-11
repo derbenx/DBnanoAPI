@@ -28,6 +28,28 @@ func LoadConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Fill in defaults for missing fields to handle upgrades and missing files
+	def := DefaultConfig()
+	if cfg.SafetySettings == nil {
+		cfg.SafetySettings = def.SafetySettings
+	}
+	if cfg.ModelNanoFlash == "" {
+		cfg.ModelNanoFlash = def.ModelNanoFlash
+	}
+	if cfg.ModelNanoPro == "" {
+		cfg.ModelNanoPro = def.ModelNanoPro
+	}
+	if cfg.ModelNano2 == "" {
+		cfg.ModelNano2 = def.ModelNano2
+	}
+	if cfg.ModelImagen == "" {
+		cfg.ModelImagen = def.ModelImagen
+	}
+	if cfg.ModelImagenUltra == "" {
+		cfg.ModelImagenUltra = def.ModelImagenUltra
+	}
+
 	return &cfg, nil
 }
 

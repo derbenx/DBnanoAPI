@@ -154,7 +154,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 			hbox := item.content.(*fyne.Container)
 			hbox.Objects[0].(*fyne.Container).Objects[1].(*widget.Label).SetText(task.ImgIDs)
-			hbox.Objects[1].(*fyne.Container).Objects[1].(*widget.Label).SetText(task.Agent)
+			hbox.Objects[1].(*fyne.Container).Objects[1].(*widget.Label).SetText(task.Agent + " " + task.Size)
 			stat := task.Status
 			if task.Disabled {
 				stat += " (Off)"
@@ -176,6 +176,16 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 						task.Disabled = !task.Disabled
 						taskList.Refresh()
 					}),
+					fyne.NewMenuItem("Duplicate Task", func() {
+						newTask := *task // Shallow copy is fine as fields are primitive or string
+						newTask.ID = len(s.Tasks) + 1
+						newTask.Status = "Pending"
+						s.Tasks = append(s.Tasks, &newTask)
+						taskList.Refresh()
+						if s.OnTasksUpdated != nil {
+							s.OnTasksUpdated()
+						}
+					}),
 					fyne.NewMenuItem("Delete", func() {
 						selectedTaskID = task.ID
 						s.DeleteHandler()
@@ -185,6 +195,34 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			}
 		},
 	)
+
+	clearEditor := func() {
+		// Block OnChanged listeners
+		oldP := promptEntry.OnChanged
+		oldN := negPromptEntry.OnChanged
+		oldT := tierSelect.OnChanged
+		oldR := ratioSelect.OnChanged
+		oldIDs := sourceIDsEntry.OnChanged
+
+		promptEntry.OnChanged = nil
+		negPromptEntry.OnChanged = nil
+		tierSelect.OnChanged = nil
+		ratioSelect.OnChanged = nil
+		sourceIDsEntry.OnChanged = nil
+
+		sourceIDsEntry.SetText("")
+		promptEntry.SetText("")
+		negPromptEntry.SetText("")
+		tierSelect.ClearSelected()
+		ratioSelect.ClearSelected()
+		costLabel.SetText("$0.00")
+
+		promptEntry.OnChanged = oldP
+		negPromptEntry.OnChanged = oldN
+		tierSelect.OnChanged = oldT
+		ratioSelect.OnChanged = oldR
+		sourceIDsEntry.OnChanged = oldIDs
+	}
 
 	taskList.OnSelected = func(id widget.ListItemID) {
 		task := s.Tasks[id]
@@ -217,6 +255,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		tierSelect.OnChanged = oldT
 		ratioSelect.OnChanged = oldR
 		sourceIDsEntry.OnChanged = oldIDs
+	}
+
+	taskList.OnUnselected = func(id widget.ListItemID) {
+		selectedTaskID = -1
+		clearEditor()
 	}
 
 	// Task Editor Fields
@@ -309,6 +352,15 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	modeSelect = widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(m string) {
 		s.GlobalMode = m
 		s.Log("Mode switched to: " + m)
+
+		if runBtn != nil {
+			if m == "Batch" {
+				runBtn.SetText("RUN BATCH")
+			} else {
+				runBtn.SetText("RUN IMMEDIATE")
+			}
+		}
+
 		for _, t := range s.Tasks {
 			t.Cost = s.CalculateCost(t.Agent, t.Size)
 		}
@@ -402,8 +454,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	})
 
-	runBtn := widget.NewButton("RUN TASKS", func() {
+	var runBtn *widget.Button
+	runBtn = widget.NewButton("RUN IMMEDIATE", func() {
+		runBtn.Disable()
 		go func() {
+			defer fyne.Do(runBtn.Enable)
 			processedCount := 0
 			batchTasks := make(map[string][]*TaskInfo)
 
@@ -411,7 +466,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				if task.Disabled {
 					continue
 				}
-				if task.Status != "Pending" && task.Status != "Failed" && task.Status != "Success" {
+				// Allow re-running Pending, Failed, Success, and Submitted tasks
+				// Basically anything not currently "Running"
+				if task.Status == "Running" {
 					continue
 				}
 
@@ -538,7 +595,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	taskHeaders := container.NewHBox(
 		fixedWidth(widget.NewLabel("Img"), 60),
-		fixedWidth(widget.NewLabel("Agent"), 120),
+		fixedWidth(widget.NewLabel("Tier"), 120),
 		fixedWidth(widget.NewLabel("Status"), 100),
 		fixedWidth(widget.NewLabel("Cost"), 80),
 		fixedWidth(widget.NewLabel("Prompt"), 500),
