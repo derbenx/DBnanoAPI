@@ -15,8 +15,28 @@ import (
 )
 
 func (s *AppState) makeCreateTab() fyne.CanvasObject {
+	var selectedImgRows []int
 	var selectedImgRow int = -1
 	var selectedTaskRow int = -1
+
+	updateColumnWidths := func(t *widget.Table, data [][]string) {
+		for col := 0; col < len(data[0]); col++ {
+			max := 0.0
+			for row := 0; row < len(data); row++ {
+				l := float64(len(data[row][col])) * 8.0 // Rough estimate
+				if l > max {
+					max = l
+				}
+			}
+			if max < 30 {
+				max = 30
+			}
+			if max > 400 {
+				max = 400
+			}
+			t.SetColumnWidth(col, float32(max))
+		}
+	}
 
 	// Pre-declare components to resolve cross-references
 	var imageList *widget.Table
@@ -86,9 +106,23 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				headers := []string{"#", "MBs", "tasks", "Image", "Path"}
 				label.SetText(headers[id.Col])
 				label.Importance = widget.HighImportance
+				label.TextStyle = fyne.TextStyle{Bold: true}
 				return
 			}
-			label.Importance = widget.MediumImportance
+			isSelected := false
+			for _, r := range selectedImgRows {
+				if r == id.Row {
+					isSelected = true
+					break
+				}
+			}
+			if isSelected {
+				label.Importance = widget.HighImportance
+				label.TextStyle = fyne.TextStyle{Bold: true, Italic: true}
+			} else {
+				label.Importance = widget.MediumImportance
+				label.TextStyle = fyne.TextStyle{}
+			}
 			img := s.Images[id.Row-1]
 			switch id.Col {
 			case 0:
@@ -111,11 +145,25 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	imageList.SetColumnWidth(3, 100)
 	imageList.SetColumnWidth(4, 200)
 
-	imageList.SelectionMode = widget.TableSelectionRow
-
 	imageList.OnSelected = func(id widget.TableCellID) {
+		// Standard selection
 		selectedImgRow = id.Row
+
+		// Manage multi-select
+		alreadySelected := false
+		for _, r := range selectedImgRows {
+			if r == id.Row {
+				alreadySelected = true
+				break
+			}
+		}
+		if !alreadySelected {
+			selectedImgRows = append(selectedImgRows, id.Row)
+		}
+
 		selectedTaskRow = -1 // Clear other selection
+		imageList.Refresh()
+		taskList.Refresh()
 		if id.Row > 0 {
 			img := s.Images[id.Row-1]
 			if img.FullPath != "<GENERATE>" {
@@ -159,9 +207,16 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				headers := []string{"Img", "Agent", "Res", "Ratio", "Status", "Prompt"}
 				label.SetText(headers[id.Col])
 				label.Importance = widget.HighImportance
+				label.TextStyle = fyne.TextStyle{Bold: true}
 				return
 			}
-			label.Importance = widget.MediumImportance
+			if id.Row == selectedTaskRow {
+				label.Importance = widget.HighImportance
+				label.TextStyle = fyne.TextStyle{Bold: true, Italic: true}
+			} else {
+				label.Importance = widget.MediumImportance
+				label.TextStyle = fyne.TextStyle{}
+			}
 			task := s.Tasks[id.Row-1]
 			switch id.Col {
 			case 0:
@@ -191,11 +246,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	taskList.SetColumnWidth(4, 100)
 	taskList.SetColumnWidth(5, 300)
 
-	taskList.SelectionMode = widget.TableSelectionRow
-
 	taskList.OnSelected = func(id widget.TableCellID) {
 		selectedTaskRow = id.Row
 		selectedImgRow = -1 // Clear other selection
+		selectedImgRows = nil
+		taskList.Refresh()
+		imageList.Refresh()
 		if id.Row > 0 && id.Row <= len(s.Tasks) {
 			task := s.Tasks[id.Row-1]
 
@@ -463,25 +519,6 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	middle := container.NewBorder(btnBox, nil, nil, nil, taskTableScroll)
 	right := container.NewVScroll(taskEditor)
 
-	updateColumnWidths := func(t *widget.Table, data [][]string) {
-		for col := 0; col < len(data[0]); col++ {
-			max := 0.0
-			for row := 0; row < len(data); row++ {
-				l := float64(len(data[row][col])) * 8.0 // Rough estimate
-				if l > max {
-					max = l
-				}
-			}
-			if max < 30 {
-				max = 30
-			}
-			if max > 400 {
-				max = 400
-			}
-			t.SetColumnWidth(col, float32(max))
-		}
-	}
-
 	s.OnImagesUpdated = func() {
 		// Calculate widths
 		if len(s.Images) > 0 {
@@ -521,20 +558,38 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			s.Log("Task deleted.")
 			return
 		}
-		if selectedImgRow > 0 && selectedImgRow <= len(s.Images) {
-			deletedImgID := s.Images[selectedImgRow-1].ID
-			s.Images = append(s.Images[:selectedImgRow-1], s.Images[selectedImgRow:]...)
-			newTasks := []*TaskInfo{}
-			for _, t := range s.Tasks {
-				if t.ImgIDs != deletedImgID {
-					newTasks = append(newTasks, t)
+		if len(selectedImgRows) > 0 {
+			// Sort in descending order to avoid index issues during deletion
+			for i := 0; i < len(selectedImgRows); i++ {
+				for j := i + 1; j < len(selectedImgRows); j++ {
+					if selectedImgRows[i] < selectedImgRows[j] {
+						selectedImgRows[i], selectedImgRows[j] = selectedImgRows[j], selectedImgRows[i]
+					}
 				}
 			}
-			s.Tasks = newTasks
+
+			for _, row := range selectedImgRows {
+				if row <= 0 || row > len(s.Images) {
+					continue
+				}
+				deletedImgID := s.Images[row-1].ID
+				s.Images = append(s.Images[:row-1], s.Images[row:]...)
+
+				newTasks := []*TaskInfo{}
+				for _, t := range s.Tasks {
+					if t.ImgIDs != deletedImgID {
+						newTasks = append(newTasks, t)
+					}
+				}
+				s.Tasks = newTasks
+			}
+			count := len(selectedImgRows)
 			selectedImgRow = -1
+			selectedImgRows = nil
 			imageList.Refresh()
 			taskList.Refresh()
-			s.Log("Image deleted.")
+			s.Log(fmt.Sprintf("%d Images deleted.", count))
+			selectedImgRows = nil
 			return
 		}
 	}
