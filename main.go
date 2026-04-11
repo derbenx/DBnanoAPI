@@ -24,6 +24,7 @@ type AppState struct {
 
 	DeleteHandler   func()
 	OnImagesUpdated func()
+	OnTasksUpdated  func()
 	GlobalMode      string
 }
 
@@ -62,7 +63,7 @@ func main() {
 	)
 
 	logScroll := container.NewVScroll(state.ModelLog)
-	logScroll.SetMinSize(fyne.NewSize(0, 150))
+	logScroll.SetMinSize(fyne.NewSize(0, 30))
 	state.LogScroll = logScroll
 
 	mainSplit := container.NewVSplit(tabs, logScroll)

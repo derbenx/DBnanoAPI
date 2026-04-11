@@ -78,6 +78,17 @@ var ModelMapping = map[string]string{
 }
 
 func (s *AppState) RunTask(task *TaskInfo) error {
+	// Estimate Cost
+	// Gemini 2.0/2.5 Flash: $0.10 / 1M tokens or $0.0001 per image (approx)
+	// Imagen: $0.03 per image
+	cost := 0.0001
+	if strings.Contains(task.Agent, "Pro") {
+		cost = 0.001
+	} else if strings.Contains(task.Agent, "Imagen") {
+		cost = 0.03
+	}
+	task.Cost = cost
+
 	modelID := ModelMapping[task.Agent]
 	if modelID == "" {
 		modelID = task.Agent // Fallback to raw if not found

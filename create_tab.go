@@ -174,7 +174,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	}
 
 	taskRTC = NewRightClickTable(
-		func() (int, int) { return len(s.Tasks) + 1, 6 },
+		func() (int, int) { return len(s.Tasks) + 1, 7 },
 		func(t *widget.Table) fyne.CanvasObject {
 			l := NewRightClickLabel("", t)
 			l.OnRightClick = func(id widget.TableCellID, pos fyne.Position) {
@@ -204,7 +204,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			label := cell.(*RightClickLabel)
 			label.id = id
 			if id.Row == 0 {
-				headers := []string{"Img", "Agent", "Res", "Ratio", "Status", "Prompt"}
+				headers := []string{"Img", "Agent", "Res", "Ratio", "Status", "Cost", "Prompt"}
 				label.SetText(headers[id.Col])
 				label.Importance = widget.HighImportance
 				label.TextStyle = fyne.TextStyle{Bold: true}
@@ -234,6 +234,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				}
 				label.SetText(status)
 			case 5:
+				label.SetText(fmt.Sprintf("$%.4f", task.Cost))
+			case 6:
 				label.SetText(task.Prompt)
 			}
 		},
@@ -244,7 +246,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	taskList.SetColumnWidth(2, 50)
 	taskList.SetColumnWidth(3, 50)
 	taskList.SetColumnWidth(4, 100)
-	taskList.SetColumnWidth(5, 300)
+	taskList.SetColumnWidth(5, 70)
+	taskList.SetColumnWidth(6, 300)
 
 	taskList.OnSelected = func(id widget.TableCellID) {
 		selectedTaskRow = id.Row
@@ -373,6 +376,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		} else {
 			imageList.Refresh()
 			taskList.Refresh()
+			if s.OnTasksUpdated != nil {
+				s.OnTasksUpdated()
+			}
 			s.Log("Session loaded successfully.")
 		}
 	})
@@ -387,44 +393,58 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	})
 
 	addTaskBtn := widget.NewButton("Add Task", func() {
-		imgID := ""
-		path := ""
-		if selectedImgRow > 0 && selectedImgRow <= len(s.Images) {
-			img := s.Images[selectedImgRow-1]
-			imgID = img.ID
-			path = img.FullPath
-			img.TaskCount++
-			imageList.Refresh()
-		} else if len(s.Images) > 0 {
-			img := s.Images[0]
-			imgID = img.ID
-			path = img.FullPath
-			img.TaskCount++
-			imageList.Refresh()
+		var imgIDs []string
+		var paths []string
+
+		rows := selectedImgRows
+		if len(rows) == 0 && selectedImgRow > 0 {
+			rows = []int{selectedImgRow}
 		}
 
-		if path == "" {
-			s.Log("Error: Add an image first!")
+		if len(rows) > 0 {
+			for _, r := range rows {
+				if r <= 0 || r > len(s.Images) {
+					continue
+				}
+				img := s.Images[r-1]
+				imgIDs = append(imgIDs, img.ID)
+				paths = append(paths, img.FullPath)
+				img.TaskCount++
+			}
+		} else if len(s.Images) > 0 {
+			img := s.Images[0]
+			imgIDs = append(imgIDs, img.ID)
+			paths = append(paths, img.FullPath)
+			img.TaskCount++
+		}
+
+		if len(paths) == 0 {
+			s.Log("Error: Add and select images first!")
 			return
 		}
 
 		s.Tasks = append(s.Tasks, &TaskInfo{
 			ID:             len(s.Tasks) + 1,
-			ImgIDs:         imgID,
+			ImgIDs:         strings.Join(imgIDs, "+"),
 			Agent:          agentSelect.Selected,
 			Size:           sizeSelect.Selected,
 			Ratio:          ratioSelect.Selected,
 			Status:         "Pending",
 			Prompt:         promptEntry.Text,
 			NegativePrompt: negPromptEntry.Text,
-			SourcePath:     path,
+			SourcePath:     strings.Join(paths, "|"),
 		})
+
+		imageList.Refresh()
 		taskList.Refresh()
+		if s.OnTasksUpdated != nil {
+			s.OnTasksUpdated()
+		}
 
 		// Update widths
-		data := [][]string{{"Img", "Agent", "Res", "Ratio", "Status", "Prompt"}}
+		data := [][]string{{"Img", "Agent", "Res", "Ratio", "Status", "Cost", "Prompt"}}
 		for _, t := range s.Tasks {
-			data = append(data, []string{t.ImgIDs, t.Agent, t.Size, t.Ratio, t.Status, t.Prompt})
+			data = append(data, []string{t.ImgIDs, t.Agent, t.Size, t.Ratio, t.Status, fmt.Sprintf("%.4f", t.Cost), t.Prompt})
 		}
 		updateColumnWidths(taskList, data)
 	})
@@ -466,6 +486,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 						task.Status = "Success"
 					}
 					taskList.Refresh()
+					if s.OnTasksUpdated != nil {
+						s.OnTasksUpdated()
+					}
 				})
 			}
 
@@ -496,7 +519,16 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	// --- Layout Assembly ---
 
-	btnBox := container.NewHBox(saveBtn, loadBtn, newImgBtn, addTaskBtn, layout.NewSpacer(), widget.NewLabel("Mode:"), modeSelect, runBtn)
+	totalCostLabel := widget.NewLabel("Total Cost: $0.0000")
+	s.OnTasksUpdated = func() {
+		total := 0.0
+		for _, t := range s.Tasks {
+			total += t.Cost
+		}
+		totalCostLabel.SetText(fmt.Sprintf("Total Cost: $%.4f", total))
+	}
+
+	btnBox := container.NewHBox(saveBtn, loadBtn, newImgBtn, addTaskBtn, layout.NewSpacer(), totalCostLabel, widget.NewLabel("Mode:"), modeSelect, runBtn)
 
 	promptEntry.SetMinRowsVisible(8)
 
@@ -555,6 +587,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			selectedTaskRow = -1
 			taskList.Refresh()
 			imageList.Refresh()
+			if s.OnTasksUpdated != nil {
+				s.OnTasksUpdated()
+			}
 			s.Log("Task deleted.")
 			return
 		}
@@ -588,6 +623,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			selectedImgRows = nil
 			imageList.Refresh()
 			taskList.Refresh()
+			if s.OnTasksUpdated != nil {
+				s.OnTasksUpdated()
+			}
 			s.Log(fmt.Sprintf("%d Images deleted.", count))
 			selectedImgRows = nil
 			return
@@ -598,7 +636,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		container.NewVSplit(topHalf, middle),
 		right,
 	)
-	mainSplit.Offset = 0.7
+	mainSplit.Offset = 0.5
 
 	return mainSplit
 }
