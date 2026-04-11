@@ -77,17 +77,44 @@ var ModelMapping = map[string]string{
 	"Imagen Ultra": "imagen-4.0-ultra-generate-001",
 }
 
-func (s *AppState) RunTask(task *TaskInfo) error {
-	// Estimate Cost
-	// Gemini 2.0/2.5 Flash: $0.10 / 1M tokens or $0.0001 per image (approx)
-	// Imagen: $0.03 per image
-	cost := 0.0001
-	if strings.Contains(task.Agent, "Pro") {
-		cost = 0.001
-	} else if strings.Contains(task.Agent, "Imagen") {
-		cost = 0.03
+func (s *AppState) CalculateCost(agent, size string) float64 {
+	full := agent + " " + size
+	base := 0.134 // pro 1K & pro 2k
+	nano := true
+
+	if strings.Contains(full, "Imagen 2K") {
+		base = 0.04
+		nano = false
 	}
-	task.Cost = cost
+	if strings.Contains(full, "Ultra 2K") {
+		base = 0.06
+		nano = false
+	}
+	if strings.Contains(full, "Pro 4K") {
+		base = 0.24
+	}
+	if strings.Contains(full, "2 1K") {
+		base = 0.067
+	}
+	if strings.Contains(full, "2 2K") {
+		base = 0.101
+	}
+	if strings.Contains(full, "2 4K") {
+		base = 0.151
+	}
+	if strings.Contains(full, "Flash") {
+		base = 0.039
+	}
+
+	// Apply 50% discount if Batch Mode is selected
+	if s.GlobalMode == "Batch" && nano {
+		return base * 0.5
+	}
+	return base
+}
+
+func (s *AppState) RunTask(task *TaskInfo) error {
+	task.Cost = s.CalculateCost(task.Agent, task.Size)
 
 	modelID := ModelMapping[task.Agent]
 	if modelID == "" {

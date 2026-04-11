@@ -46,11 +46,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var preview *canvas.Image
 	var promptEntry *TabbableEntry
 	var negPromptEntry *TabbableEntry
-	var agentSelect *widget.Select
-	var sizeSelect *widget.Select
+	var tierSelect *widget.Select
 	var ratioSelect *widget.Select
 	var modeSelect *widget.RadioGroup
 	var sourceIDsEntry *widget.Entry
+	var costLabel *widget.Label
 
 	// --- Component Initialization ---
 
@@ -90,8 +90,24 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 						}, s.Window)
 						fd.Show()
 					}),
+					fyne.NewMenuItem("Select Multiple", func() {
+						alreadySelected := false
+						for _, r := range selectedImgRows {
+							if r == id.Row {
+								alreadySelected = true
+								break
+							}
+						}
+						if !alreadySelected {
+							selectedImgRows = append(selectedImgRows, id.Row)
+							imageList.Refresh()
+						}
+					}),
 					fyne.NewMenuItem("Delete", func() {
 						selectedImgRow = id.Row
+						if len(selectedImgRows) <= 1 {
+							selectedImgRows = []int{id.Row}
+						}
 						s.DeleteHandler()
 					}),
 				)
@@ -149,17 +165,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		// Standard selection
 		selectedImgRow = id.Row
 
-		// Manage multi-select
-		alreadySelected := false
-		for _, r := range selectedImgRows {
-			if r == id.Row {
-				alreadySelected = true
-				break
-			}
-		}
-		if !alreadySelected {
-			selectedImgRows = append(selectedImgRows, id.Row)
-		}
+		// AHK-like behavior: single click selects one, clearing others.
+		// Use right-click or a future modifier-key check for multi-select if needed.
+		// For now, let's allow standard Fyne multi-select if we can, but the user complained about selection issues.
+		// By default, just replace selection unless we implement a specific multi-select mode.
+		selectedImgRows = []int{id.Row}
 
 		selectedTaskRow = -1 // Clear other selection
 		imageList.Refresh()
@@ -261,29 +271,26 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			// Block OnChanged listeners
 			oldP := promptEntry.OnChanged
 			oldN := negPromptEntry.OnChanged
-			oldA := agentSelect.OnChanged
-			oldS := sizeSelect.OnChanged
+			oldT := tierSelect.OnChanged
 			oldR := ratioSelect.OnChanged
 			oldIDs := sourceIDsEntry.OnChanged
 
 			promptEntry.OnChanged = nil
 			negPromptEntry.OnChanged = nil
-			agentSelect.OnChanged = nil
-			sizeSelect.OnChanged = nil
+			tierSelect.OnChanged = nil
 			ratioSelect.OnChanged = nil
 			sourceIDsEntry.OnChanged = nil
 
 			sourceIDsEntry.SetText(task.ImgIDs)
 			promptEntry.SetText(task.Prompt)
 			negPromptEntry.SetText(task.NegativePrompt)
-			agentSelect.SetSelected(task.Agent)
-			sizeSelect.SetSelected(task.Size)
+			tierSelect.SetSelected(task.Agent + " " + task.Size)
 			ratioSelect.SetSelected(task.Ratio)
+			costLabel.SetText(fmt.Sprintf("$%.4f", task.Cost))
 
 			promptEntry.OnChanged = oldP
 			negPromptEntry.OnChanged = oldN
-			agentSelect.OnChanged = oldA
-			sizeSelect.OnChanged = oldS
+			tierSelect.OnChanged = oldT
 			ratioSelect.OnChanged = oldR
 			sourceIDsEntry.OnChanged = oldIDs
 		}
@@ -300,16 +307,15 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	negPromptEntry.SetText(s.Config.DefaultNegPrompt)
 	negPromptEntry.Wrapping = fyne.TextWrapWord
 
-	agentOptions := []string{"Nano Flash", "Nano Pro", "Nano 2", "Imagen", "Imagen Ultra"}
-	agentSelect = widget.NewSelect(agentOptions, nil)
-
-	sizeSelect = widget.NewSelect([]string{"1K", "2K", "4K"}, nil)
-	sizeSelect.SetSelected("1K")
+	tierOptions := []string{"Nano Flash 1K", "Nano Pro 1K", "Nano Pro 2K", "Nano Pro 4K", "Nano 2 1K", "Nano 2 2K", "Nano 2 4K", "Imagen 2K", "Imagen Ultra 2K"}
+	tierSelect = widget.NewSelect(tierOptions, nil)
 
 	ratioOptions := []string{"Default", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9"}
 	ratioOptionsExt := []string{"Default", "1:8", "1:4", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9", "4:1", "8:1"}
 	ratioSelect = widget.NewSelect(ratioOptions, nil)
 	ratioSelect.SetSelected("1:1")
+
+	costLabel = widget.NewLabel("$0.00")
 
 	updateTaskFromUI := func() {
 		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
@@ -317,71 +323,62 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			task.ImgIDs = sourceIDsEntry.Text
 			task.Prompt = promptEntry.Text
 			task.NegativePrompt = negPromptEntry.Text
-			task.Agent = agentSelect.Selected
-			task.Size = sizeSelect.Selected
+
+			// Parse Tier
+			parts := strings.Split(tierSelect.Selected, " ")
+			if len(parts) >= 3 {
+				task.Agent = strings.Join(parts[:len(parts)-1], " ")
+				task.Size = parts[len(parts)-1]
+			} else if len(parts) == 2 {
+				task.Agent = parts[0]
+				task.Size = parts[1]
+			}
+
 			task.Ratio = ratioSelect.Selected
+			task.Cost = s.CalculateCost(task.Agent, task.Size)
+			costLabel.SetText(fmt.Sprintf("$%.4f", task.Cost))
+
 			taskList.Refresh()
+			if s.OnTasksUpdated != nil {
+				s.OnTasksUpdated()
+			}
 		}
 	}
 
 	sourceIDsEntry.OnChanged = func(string) { updateTaskFromUI() }
 	promptEntry.OnChanged = func(string) { updateTaskFromUI() }
 	negPromptEntry.OnChanged = func(string) { updateTaskFromUI() }
-	agentSelect.OnChanged = func(str string) {
-		updateTaskFromUI()
-		if str == "Nano 2" {
+	tierSelect.OnChanged = func(str string) {
+		if strings.Contains(str, "Nano 2") {
 			ratioSelect.Options = ratioOptionsExt
 		} else {
 			ratioSelect.Options = ratioOptions
 		}
 		ratioSelect.Refresh()
-
-		if str == "Imagen" || str == "Imagen Ultra" {
-			sizeSelect.Options = []string{"2K"}
-			sizeSelect.SetSelected("2K")
-		} else if str == "Nano Flash" {
-			sizeSelect.Options = []string{"1K"}
-			sizeSelect.SetSelected("1K")
-		} else {
-			sizeSelect.Options = []string{"1K", "2K", "4K"}
-		}
-		sizeSelect.Refresh()
+		updateTaskFromUI()
 	}
-	sizeSelect.OnChanged = func(string) { updateTaskFromUI() }
 	ratioSelect.OnChanged = func(string) { updateTaskFromUI() }
-	agentSelect.SetSelected("Nano Flash")
+	tierSelect.SetSelected("Nano Flash 1K")
 
 	modeSelect = widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(m string) {
 		s.GlobalMode = m
 		s.Log("Mode switched to: " + m)
+		// Update all task costs
+		for _, t := range s.Tasks {
+			t.Cost = s.CalculateCost(t.Agent, t.Size)
+		}
+		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
+			costLabel.SetText(fmt.Sprintf("$%.4f", s.Tasks[selectedTaskRow-1].Cost))
+		}
+		taskList.Refresh()
+		if s.OnTasksUpdated != nil {
+			s.OnTasksUpdated()
+		}
 	})
 	modeSelect.SetSelected("Immediate")
 	modeSelect.Horizontal = true
 
 	// --- Buttons ---
-
-	saveBtn := widget.NewButton("Save Session", func() {
-		err := s.SaveSession()
-		if err != nil {
-			s.Log("Save failed: " + err.Error())
-		} else {
-			s.Log("Session saved successfully.")
-		}
-	})
-
-	loadBtn := widget.NewButton("Load Session", func() {
-		err := s.LoadSession()
-		if err != nil {
-			s.Log("Load failed: " + err.Error())
-		} else {
-			imageList.Refresh()
-			taskList.Refresh()
-			if s.OnTasksUpdated != nil {
-				s.OnTasksUpdated()
-			}
-			s.Log("Session loaded successfully.")
-		}
-	})
 
 	newImgBtn := widget.NewButton("New Image", func() {
 		s.Images = append(s.Images, &ImageInfo{
@@ -423,13 +420,25 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			return
 		}
 
+		// Parse Tier
+		var agent, size string
+		parts := strings.Split(tierSelect.Selected, " ")
+		if len(parts) >= 3 {
+			agent = strings.Join(parts[:len(parts)-1], " ")
+			size = parts[len(parts)-1]
+		} else if len(parts) == 2 {
+			agent = parts[0]
+			size = parts[1]
+		}
+
 		s.Tasks = append(s.Tasks, &TaskInfo{
 			ID:             len(s.Tasks) + 1,
 			ImgIDs:         strings.Join(imgIDs, "+"),
-			Agent:          agentSelect.Selected,
-			Size:           sizeSelect.Selected,
+			Agent:          agent,
+			Size:           size,
 			Ratio:          ratioSelect.Selected,
 			Status:         "Pending",
+			Cost:           s.CalculateCost(agent, size),
 			Prompt:         promptEntry.Text,
 			NegativePrompt: negPromptEntry.Text,
 			SourcePath:     strings.Join(paths, "|"),
@@ -519,26 +528,55 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	// --- Layout Assembly ---
 
-	totalCostLabel := widget.NewLabel("Total Cost: $0.0000")
+	totalCostLabel := widget.NewLabel("Total: $0.0000")
 	s.OnTasksUpdated = func() {
 		total := 0.0
 		for _, t := range s.Tasks {
 			total += t.Cost
 		}
-		totalCostLabel.SetText(fmt.Sprintf("Total Cost: $%.4f", total))
+		totalCostLabel.SetText(fmt.Sprintf("Total: $%.4f", total))
 	}
 
-	btnBox := container.NewHBox(saveBtn, loadBtn, newImgBtn, addTaskBtn, layout.NewSpacer(), totalCostLabel, widget.NewLabel("Mode:"), modeSelect, runBtn)
+	saveBtn := widget.NewButton("Save Session", func() {
+		err := s.SaveSession()
+		if err != nil {
+			s.Log("Save failed: " + err.Error())
+		} else {
+			s.Log("Session saved successfully.")
+		}
+	})
+
+	loadBtn := widget.NewButton("Load Session", func() {
+		err := s.LoadSession()
+		if err != nil {
+			s.Log("Load failed: " + err.Error())
+		} else {
+			imageList.Refresh()
+			taskList.Refresh()
+			if s.OnTasksUpdated != nil {
+				s.OnTasksUpdated()
+			}
+			s.Log("Session loaded successfully.")
+		}
+	})
+
+	testBtn := widget.NewButton("Test API Key", func() {
+		go s.TestAPI()
+	})
+
+	btnLine1 := container.NewHBox(newImgBtn, addTaskBtn, totalCostLabel, modeSelect)
+	btnLine2 := container.NewHBox(loadBtn, saveBtn, testBtn, runBtn)
+	btnBox := container.NewVBox(btnLine1, btnLine2)
 
 	promptEntry.SetMinRowsVisible(8)
 
 	taskEditor := container.New(layout.NewFormLayout(),
-		widget.NewLabel("Source\nIDs:"), sourceIDsEntry,
-		widget.NewLabel("Positive\nPrompt:"), promptEntry,
-		widget.NewLabel("Negative\nPrompt:"), negPromptEntry,
-		widget.NewLabel("Agent:"), agentSelect,
-		widget.NewLabel("Size:"), sizeSelect,
-		widget.NewLabel("Aspect\nRatio:"), ratioSelect,
+		widget.NewLabel("Source IDs:"), sourceIDsEntry,
+		widget.NewLabel("Positive Prompt:"), promptEntry,
+		widget.NewLabel("Negative Prompt:"), negPromptEntry,
+		widget.NewLabel("Tier:"), tierSelect,
+		widget.NewLabel("Aspect Ratio:"), ratioSelect,
+		widget.NewLabel("Cost:"), costLabel,
 	)
 
 	imgScroll := container.NewVScroll(imageRTC)
@@ -546,9 +584,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	topHalf.Offset = 0.5
 
 	taskTableScroll := container.NewVScroll(taskRTC)
-	taskTableScroll.SetMinSize(fyne.NewSize(0, 200))
+	taskTableScroll.SetMinSize(fyne.NewSize(0, 140))
 
-	middle := container.NewBorder(btnBox, nil, nil, nil, taskTableScroll)
+	leftBottom := container.NewBorder(nil, btnBox, nil, nil, taskTableScroll)
 	right := container.NewVScroll(taskEditor)
 
 	s.OnImagesUpdated = func() {
@@ -574,16 +612,34 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	}
 
+	isIDInMergedID := func(id, mID string) bool {
+		if id == mID {
+			return true
+		}
+		for _, p := range strings.Split(mID, "+") {
+			if p == id {
+				return true
+			}
+		}
+		return false
+	}
+
 	s.DeleteHandler = func() {
 		if selectedTaskRow > 0 && selectedTaskRow <= len(s.Tasks) {
 			deletedTask := s.Tasks[selectedTaskRow-1]
 			s.Tasks = append(s.Tasks[:selectedTaskRow-1], s.Tasks[selectedTaskRow:]...)
-			for _, img := range s.Images {
-				if img.ID == deletedTask.ImgIDs {
-					img.TaskCount--
-					break
+
+			// Update task counts for all images involved in this task
+			ids := strings.Split(deletedTask.ImgIDs, "+")
+			for _, id := range ids {
+				for _, img := range s.Images {
+					if img.ID == id {
+						img.TaskCount--
+						break
+					}
 				}
 			}
+
 			selectedTaskRow = -1
 			taskList.Refresh()
 			imageList.Refresh()
@@ -612,7 +668,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 				newTasks := []*TaskInfo{}
 				for _, t := range s.Tasks {
-					if t.ImgIDs != deletedImgID {
+					if !isIDInMergedID(deletedImgID, t.ImgIDs) {
 						newTasks = append(newTasks, t)
 					}
 				}
@@ -632,11 +688,14 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	}
 
+	leftSplit := container.NewVSplit(topHalf, leftBottom)
+	leftSplit.Offset = 0.5
+
 	mainSplit := container.NewHSplit(
-		container.NewVSplit(topHalf, middle),
+		leftSplit,
 		right,
 	)
-	mainSplit.Offset = 0.5
+	mainSplit.Offset = 0.6
 
 	return mainSplit
 }
