@@ -26,6 +26,16 @@ type Config struct {
 	ModelNano2       string `json:"model_nano_2"`
 	ModelImagen      string `json:"model_imagen"`
 	ModelImagenUltra string `json:"model_imagen_ultra"`
+
+	// GUI State
+	WindowWidth  float32 `json:"window_width"`
+	WindowHeight float32 `json:"window_height"`
+	IsMaximized  bool    `json:"is_maximized"`
+
+	SplitOffsetMain float64 `json:"split_offset_main"`
+	SplitOffsetLeft float64 `json:"split_offset_left"`
+	SplitOffsetTop  float64 `json:"split_offset_top"`
+	LogSplitOffset  float64 `json:"log_split_offset"`
 }
 
 type ImageInfo struct {

@@ -17,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -263,6 +264,17 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 								s.Log("Image changed to: " + p)
 							}
 						}, s.Window)
+
+						// Set default directory to app run path
+						cwd, _ := os.Getwd()
+						listURI := storage.NewFileURI(cwd)
+						lister, err := storage.ListerForURI(listURI)
+						if err == nil {
+							fd.SetLocation(lister)
+						}
+
+						// Make dialog larger
+						fd.Resize(fyne.NewSize(800, 550))
 						fd.Show()
 					}),
 					fyne.NewMenuItem("Delete", func() {
@@ -283,8 +295,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 		if img.FullPath != "<GENERATE>" {
 			preview.File = img.FullPath
-			preview.Refresh()
+		} else {
+			preview.File = ""
 		}
+		preview.Refresh()
 		updateRatioOverlay("Default")
 	}
 
@@ -793,7 +807,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	imageScroll.SetMinSize(fyne.NewSize(400, 0))
 
 	topHalf := container.NewHSplit(imageScroll, previewContainer)
-	topHalf.Offset = 0.5
+	topHalf.Offset = s.Config.SplitOffsetTop
+	s.TopSplit = topHalf
 
 	taskHeaders := container.NewHBox(
 		fixedWidth(widget.NewLabel("Img"), 60),
@@ -930,13 +945,15 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	}
 
 	leftSplit := container.NewVSplit(topHalf, leftBottom)
-	leftSplit.Offset = 0.5
+	leftSplit.Offset = s.Config.SplitOffsetLeft
+	s.LeftSplit = leftSplit
 
 	mainSplit := container.NewHSplit(
 		leftSplit,
 		right,
 	)
-	mainSplit.Offset = 0.75
+	mainSplit.Offset = s.Config.SplitOffsetMain
+	s.MainSplit = mainSplit
 
 	return mainSplit
 }

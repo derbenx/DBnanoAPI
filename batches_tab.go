@@ -61,6 +61,7 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 		}
 		state.BatchJobs = newJobs
 		batchList.Refresh()
+		state.CleanupJobsFile()
 		state.Log("Cleared completed batch jobs.")
 	})
 

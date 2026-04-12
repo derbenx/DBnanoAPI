@@ -32,12 +32,16 @@ type AppState struct {
 	OnImagesUpdated func()
 	OnTasksUpdated  func()
 	GlobalMode      string
+
+	MainSplit *container.Split
+	LeftSplit *container.Split
+	TopSplit  *container.Split
+	LogSplit  *container.Split
 }
 
 func main() {
 	a := app.NewWithID("com.nanogo.editor")
 	w := a.NewWindow("Gemini 2026 Pro Editor (NanoGo)")
-	w.Resize(fyne.NewSize(950, 700))
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -74,9 +78,12 @@ func main() {
 	logScroll.SetMinSize(fyne.NewSize(0, 30))
 	state.LogScroll = logScroll
 
-	mainSplit := container.NewVSplit(tabs, logScroll)
-	mainSplit.Offset = 0.8
-	w.SetContent(mainSplit)
+	logSplit := container.NewVSplit(tabs, logScroll)
+	logSplit.Offset = state.Config.LogSplitOffset
+	state.LogSplit = logSplit
+	w.SetContent(logSplit)
+
+	w.Resize(fyne.NewSize(state.Config.WindowWidth, state.Config.WindowHeight))
 
 	// Background Monitoring
 	go func() {
@@ -155,6 +162,24 @@ func main() {
 	})
 
 	w.CenterOnScreen()
+
+	// Capture state on close
+	w.SetOnClosed(func() {
+		state.Config.WindowWidth = w.Canvas().Size().Width
+		state.Config.WindowHeight = w.Canvas().Size().Height
+		state.Config.LogSplitOffset = state.LogSplit.Offset
+		if state.MainSplit != nil {
+			state.Config.SplitOffsetMain = state.MainSplit.Offset
+		}
+		if state.LeftSplit != nil {
+			state.Config.SplitOffsetLeft = state.LeftSplit.Offset
+		}
+		if state.TopSplit != nil {
+			state.Config.SplitOffsetTop = state.TopSplit.Offset
+		}
+		SaveConfig(state.Config)
+	})
+
 	w.ShowAndRun()
 }
 

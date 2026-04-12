@@ -86,5 +86,12 @@ func DefaultConfig() *Config {
 		ModelNano2:       "gemini-3.1-flash-image-preview",
 		ModelImagen:       "imagen-4.0-generate-001",
 		ModelImagenUltra: "imagen-4.0-ultra-generate-001",
+
+		WindowWidth:     950,
+		WindowHeight:    700,
+		SplitOffsetMain: 0.75,
+		SplitOffsetLeft: 0.5,
+		SplitOffsetTop:  0.5,
+		LogSplitOffset:  0.8,
 	}
 }

@@ -255,6 +255,14 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	})
 
 	s.Log("Batch Job Submitted: " + res.Name)
+
+	// Persist to jobs.txt
+	f, err := os.OpenFile("jobs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		f.WriteString(res.Name + "\n")
+		f.Close()
+	}
+
 	return nil
 }
 
@@ -483,6 +491,30 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 	return nil
 }
 
+func (s *AppState) CleanupJobsFile() {
+	var activeIDs []string
+	for _, job := range s.BatchJobs {
+		if job.Status != "SUCCEEDED" && job.Status != "FAILED" && job.Status != "CANCELLED" && job.Status != "EXPIRED" && job.Status != "Success" && job.Status != "Failed" {
+			activeIDs = append(activeIDs, job.JobID)
+		}
+	}
+
+	if len(activeIDs) == 0 {
+		os.Remove("jobs.txt")
+		return
+	}
+
+	f, err := os.Create("jobs.txt")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	for _, id := range activeIDs {
+		f.WriteString(id + "\n")
+	}
+}
+
 func (s *AppState) DownloadBatchResults(fileID string) error {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media&key=%s", fileID, s.Config.APIKey)
 	resp, err := http.Get(url)
@@ -516,6 +548,7 @@ func (s *AppState) DownloadBatchResults(fileID string) error {
 		s.ProcessBatchItem(result.Response, result.CustomID)
 	}
 
+	s.CleanupJobsFile()
 	return nil
 }
 
