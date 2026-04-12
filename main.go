@@ -98,7 +98,7 @@ func main() {
 			if remaining <= 0 {
 				state.Log("Checking batch statuses...")
 				for _, job := range state.BatchJobs {
-					if job.Status == "SUCCEEDED" || job.Status == "FAILED" || job.Status == "CANCELLED" {
+					if job.Status == "SUCCEEDED" || job.Status == "FAILED" || job.Status == "CANCELLED" || job.Status == "EXPIRED" {
 						continue
 					}
 					err := state.CheckBatchStatus(job)

@@ -467,8 +467,14 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 		return err
 	}
 
-	job.Status = res.State
-	if res.State == "SUCCEEDED" || res.State == "BATCH_STATE_SUCCEEDED" {
+	// Normalize status
+	status := res.State
+	if strings.HasPrefix(status, "BATCH_STATE_") {
+		status = status[len("BATCH_STATE_"):]
+	}
+	job.Status = status
+
+	if status == "SUCCEEDED" {
 		if res.ResponsesFile != "" {
 			s.Log("Batch " + job.JobID + " succeeded. Downloading results...")
 			return s.DownloadBatchResults(res.ResponsesFile)

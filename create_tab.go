@@ -595,13 +595,18 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	promptEntry.SetMinRowsVisible(8)
 
-	taskEditor := container.New(layout.NewFormLayout(),
-		widget.NewLabel("Source IDs:"), sourceIDsEntry,
-		widget.NewLabel("Positive\nPrompt:"), promptEntry,
-		widget.NewLabel("Negative\nPrompt:"), negPromptEntry,
-		widget.NewLabel("Tier:"), tierSelect,
-		widget.NewLabel("Aspect\nRatio:"), ratioSelect,
-		widget.NewLabel("Cost:"), costLabel,
+	taskEditor := container.NewVBox(
+		widget.NewLabel("Source IDs:"),
+		sourceIDsEntry,
+		widget.NewLabel("Positive Prompt:"),
+		promptEntry,
+		widget.NewLabel("Negative Prompt:"),
+		negPromptEntry,
+		container.New(layout.NewFormLayout(),
+			widget.NewLabel("Tier:"), tierSelect,
+			widget.NewLabel("Aspect Ratio:"), ratioSelect,
+			widget.NewLabel("Cost:"), costLabel,
+		),
 	)
 
 	imageHeaders := container.NewHBox(

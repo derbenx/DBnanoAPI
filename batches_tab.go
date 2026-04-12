@@ -52,9 +52,12 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 	clearBtn := widget.NewButton("Clear Completed", func() {
 		newJobs := []*BatchJob{}
 		for _, job := range state.BatchJobs {
-			if job.Status != "Success" && job.Status != "Failed" && job.Status != "SUCCEEDED" && job.Status != "FAILED" && job.Status != "CANCELLED" {
-				newJobs = append(newJobs, job)
+			// Filter out all terminal states
+			s := job.Status
+			if s == "Success" || s == "Failed" || s == "SUCCEEDED" || s == "FAILED" || s == "CANCELLED" || s == "EXPIRED" {
+				continue
 			}
+			newJobs = append(newJobs, job)
 		}
 		state.BatchJobs = newJobs
 		batchList.Refresh()
