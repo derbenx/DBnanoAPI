@@ -2,9 +2,14 @@ package main
 
 import (
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"image/color"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -14,6 +19,126 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
+
+func parseRatio(str string) float32 {
+	if str == "Default" || str == "" {
+		return 0
+	}
+	parts := strings.Split(str, ":")
+	if len(parts) != 2 {
+		return 0
+	}
+	w, _ := strconv.ParseFloat(parts[0], 32)
+	h, _ := strconv.ParseFloat(parts[1], 32)
+	if h == 0 {
+		return 0
+	}
+	return float32(w / h)
+}
+
+func getImageDimensions(path string) (int, int, error) {
+	if path == "<GENERATE>" {
+		return 1024, 1024, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return 0, 0, err
+	}
+	return cfg.Width, cfg.Height, nil
+}
+
+func GetClosestRatio(w, h int) string {
+	target := float64(w) / float64(h)
+	ratios := []string{"1:8", "1:4", "9:16", "2:3", "3:4", "4:5", "1:1", "5:4", "4:3", "3:2", "16:9", "21:9", "4:1", "8:1"}
+	bestMatch := "1:1"
+	minDiff := 999.0
+
+	for _, str := range ratios {
+		parts := strings.Split(str, ":")
+		rw, _ := strconv.ParseFloat(parts[0], 64)
+		rh, _ := strconv.ParseFloat(parts[1], 64)
+		ratioVal := rw / rh
+		diff := math.Abs(target - ratioVal)
+
+		if diff < minDiff {
+			minDiff = diff
+			bestMatch = str
+		}
+	}
+	return bestMatch
+}
+
+type ratioOverlayLayout struct {
+	targetRatio float32
+}
+
+func (r *ratioOverlayLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) < 5 {
+		return
+	}
+
+	preview := objects[0]
+	preview.Resize(size)
+	preview.Move(fyne.NewPos(0, 0))
+
+	if r.targetRatio <= 0 {
+		for i := 1; i < 5; i++ {
+			objects[i].Hide()
+		}
+		return
+	}
+
+	pw, ph := size.Width, size.Height
+	if pw == 0 || ph == 0 {
+		return
+	}
+
+	var bw, bh float32
+	if pw/ph > r.targetRatio {
+		bh = ph
+		bw = bh * r.targetRatio
+	} else {
+		bw = pw
+		bh = bw / r.targetRatio
+	}
+
+	bx := (pw - bw) / 2
+	by := (ph - bh) / 2
+	thick := float32(4)
+
+	// Top
+	objects[1].Show()
+	objects[1].Resize(fyne.NewSize(bw, thick))
+	objects[1].Move(fyne.NewPos(bx, by))
+
+	// Bottom
+	objects[2].Show()
+	objects[2].Resize(fyne.NewSize(bw, thick))
+	objects[2].Move(fyne.NewPos(bx, by+bh-thick))
+
+	// Left
+	objects[3].Show()
+	objects[3].Resize(fyne.NewSize(thick, bh))
+	objects[3].Move(fyne.NewPos(bx, by))
+
+	// Right
+	objects[4].Show()
+	objects[4].Resize(fyne.NewSize(thick, bh))
+	objects[4].Move(fyne.NewPos(bx+bw-thick, by))
+}
+
+func (r *ratioOverlayLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) == 0 {
+		return fyne.NewSize(300, 200)
+	}
+	return objects[0].MinSize()
+}
 
 func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var selectedImgID string
@@ -37,6 +162,16 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var sourceIDsEntry *widget.Entry
 	var costLabel *widget.Label
 	var runBtn *widget.Button
+	var overlayLayout *ratioOverlayLayout
+	var previewContainer *fyne.Container
+
+	updateRatioOverlay := func(ratioStr string) {
+		if overlayLayout == nil || previewContainer == nil {
+			return
+		}
+		overlayLayout.targetRatio = parseRatio(ratioStr)
+		previewContainer.Refresh()
+	}
 
 	updateRunBtnLabel := func() {
 		if runBtn == nil || modeSelect == nil {
@@ -54,6 +189,18 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	preview = canvas.NewImageFromResource(nil)
 	preview.FillMode = canvas.ImageFillContain
 	preview.SetMinSize(fyne.NewSize(300, 200))
+
+	overlayT := canvas.NewRectangle(color.RGBA{R: 255, A: 255})
+	overlayB := canvas.NewRectangle(color.RGBA{R: 255, A: 255})
+	overlayL := canvas.NewRectangle(color.RGBA{R: 255, A: 255})
+	overlayR := canvas.NewRectangle(color.RGBA{R: 255, A: 255})
+	overlayT.Hide()
+	overlayB.Hide()
+	overlayL.Hide()
+	overlayR.Hide()
+
+	overlayLayout = &ratioOverlayLayout{targetRatio: 0}
+	previewContainer = container.New(overlayLayout, preview, overlayT, overlayB, overlayL, overlayR)
 
 	// Image List
 	imageList = widget.NewList(
@@ -138,6 +285,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			preview.File = img.FullPath
 			preview.Refresh()
 		}
+		updateRatioOverlay("Default")
 	}
 
 	// Task List
@@ -263,6 +411,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		tierSelect.SetSelected(task.Agent + " " + task.Size)
 		ratioSelect.SetSelected(task.Ratio)
 		costLabel.SetText(fmt.Sprintf("$%.4f", task.Cost))
+		updateRatioOverlay(task.Ratio)
 
 		promptEntry.OnChanged = oldP
 		negPromptEntry.OnChanged = oldN
@@ -274,6 +423,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	taskList.OnUnselected = func(id widget.ListItemID) {
 		selectedTaskID = -1
 		clearEditor()
+		updateRatioOverlay("Default")
 	}
 
 	// Task Editor Fields
@@ -310,20 +460,30 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 		if task != nil {
 			if task.ImgIDs != sourceIDsEntry.Text {
-				task.ImgIDs = sourceIDsEntry.Text
-				// Update SourcePath based on new IDs
+				// Validate and filter IDs
+				var validIDs []string
 				var newPaths []string
-				ids := strings.Split(task.ImgIDs, "+")
+				ids := strings.Split(sourceIDsEntry.Text, "+")
 				for _, id := range ids {
 					id = strings.TrimSpace(id)
+					if id == "" {
+						continue
+					}
 					for _, img := range s.Images {
 						if img.ID == id {
+							validIDs = append(validIDs, id)
 							newPaths = append(newPaths, img.FullPath)
 							break
 						}
 					}
 				}
+				task.ImgIDs = strings.Join(validIDs, "+")
 				task.SourcePath = strings.Join(newPaths, "|")
+
+				// Update entry if we filtered anything
+				if task.ImgIDs != sourceIDsEntry.Text {
+					sourceIDsEntry.SetText(task.ImgIDs)
+				}
 			}
 			task.Prompt = promptEntry.Text
 			task.NegativePrompt = negPromptEntry.Text
@@ -340,6 +500,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			task.Ratio = ratioSelect.Selected
 			task.Cost = s.CalculateCost(task.Agent, task.Size)
 			costLabel.SetText(fmt.Sprintf("$%.4f", task.Cost))
+			updateRatioOverlay(task.Ratio)
 
 			taskList.Refresh()
 			if s.OnTasksUpdated != nil {
@@ -432,6 +593,15 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			return
 		}
 
+		// Detect ratio from first selected image
+		detectedRatio := "1:1"
+		if len(paths) > 0 {
+			w, h, err := getImageDimensions(paths[0])
+			if err == nil {
+				detectedRatio = GetClosestRatio(w, h)
+			}
+		}
+
 		var agent, size string
 		parts := strings.Split(tierSelect.Selected, " ")
 		if len(parts) >= 3 {
@@ -442,18 +612,19 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			size = parts[1]
 		}
 
-		s.Tasks = append(s.Tasks, &TaskInfo{
+		newTask := &TaskInfo{
 			ID:             s.NextTaskID,
 			ImgIDs:         strings.Join(imgIDs, "+"),
 			Agent:          agent,
 			Size:           size,
-			Ratio:          ratioSelect.Selected,
+			Ratio:          detectedRatio,
 			Status:         "Pending",
 			Cost:           s.CalculateCost(agent, size),
-			Prompt:         promptEntry.Text,
-			NegativePrompt: negPromptEntry.Text,
+			Prompt:         s.Config.DefaultPrompt,
+			NegativePrompt: s.Config.DefaultNegPrompt,
 			SourcePath:     strings.Join(paths, "|"),
-		})
+		}
+		s.Tasks = append(s.Tasks, newTask)
 		s.NextTaskID++
 
 		imageList.Refresh()
@@ -461,6 +632,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		if s.OnTasksUpdated != nil {
 			s.OnTasksUpdated()
 		}
+		// Select the new task
+		taskList.Select(len(s.Tasks) - 1)
 	})
 
 	runBtn = widget.NewButton("RUN IMMEDIATE", func() {
@@ -619,7 +792,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	imageScroll := container.NewHScroll(container.NewBorder(imageHeaders, nil, nil, nil, imageList))
 	imageScroll.SetMinSize(fyne.NewSize(400, 0))
 
-	topHalf := container.NewHSplit(imageScroll, preview)
+	topHalf := container.NewHSplit(imageScroll, previewContainer)
 	topHalf.Offset = 0.5
 
 	taskHeaders := container.NewHBox(
@@ -637,8 +810,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	s.OnImagesUpdated = func() {
 		imageList.Refresh()
-		if selectedImgID == "" && len(s.Images) > 0 {
-			imageList.Select(0)
+		if len(s.Images) > 0 {
+			// If no selection, or if we want to snap to the latest addition
+			// we select the LAST added image (most natural for drops)
+			imageList.Select(len(s.Images) - 1)
 		}
 	}
 
@@ -715,6 +890,19 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					s.OnTasksUpdated()
 				}
 				s.Log("Image deleted.")
+
+				// Auto-select next best image
+				if len(s.Images) > 0 {
+					newIdx := idx
+					if newIdx >= len(s.Images) {
+						newIdx = len(s.Images) - 1
+					}
+					imageList.Select(newIdx)
+				} else {
+					// Clear preview if no images left
+					preview.File = ""
+					preview.Refresh()
+				}
 			}
 		}
 	}
