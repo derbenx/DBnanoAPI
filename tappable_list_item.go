@@ -5,17 +5,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-type RightClickList struct {
-	*widget.List
-	OnRightClick func(widget.ListItemID, fyne.Position)
-}
-
-func NewRightClickList(length func() int, create func() fyne.CanvasObject, update func(widget.ListItemID, fyne.CanvasObject)) *RightClickList {
-	l := &RightClickList{}
-	l.List = widget.NewList(length, create, update)
-	return l
-}
-
 type tappableListItem struct {
 	widget.BaseWidget
 	content      fyne.CanvasObject
