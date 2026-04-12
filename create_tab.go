@@ -813,7 +813,15 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		if len(s.Images) > 0 {
 			// If no selection, or if we want to snap to the latest addition
 			// we select the LAST added image (most natural for drops)
-			imageList.Select(len(s.Images) - 1)
+			lastIdx := len(s.Images) - 1
+			img := s.Images[lastIdx]
+			if img.FullPath != "<GENERATE>" {
+				preview.File = img.FullPath
+			} else {
+				preview.File = ""
+			}
+			preview.Refresh()
+			imageList.Select(lastIdx)
 		}
 	}
 
@@ -860,6 +868,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					s.OnTasksUpdated()
 				}
 				s.Log("Task deleted.")
+
+				if len(s.Tasks) == 0 {
+					s.NextTaskID = 1
+				}
 			}
 			return
 		}
@@ -897,11 +909,21 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					if newIdx >= len(s.Images) {
 						newIdx = len(s.Images) - 1
 					}
+					// Explicitly update preview for the new selection
+					img := s.Images[newIdx]
+					if img.FullPath != "<GENERATE>" {
+						preview.File = img.FullPath
+					} else {
+						preview.File = ""
+					}
+					preview.Refresh()
 					imageList.Select(newIdx)
 				} else {
 					// Clear preview if no images left
 					preview.File = ""
 					preview.Refresh()
+					// Reset counters if empty
+					s.NextImageID = 1
 				}
 			}
 		}
