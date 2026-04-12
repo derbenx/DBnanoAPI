@@ -222,11 +222,12 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 		modelBox,
 		safetyBox,
 	)
-	scroll := container.NewVScroll(content)
+
+	centeredContent := container.New(&ratioLayout{ratio: 5.0 / 6.0}, content)
+	scroll := container.NewVScroll(centeredContent)
 
 	saveBtn.Importance = widget.HighImportance
-	footer := container.NewPadded(saveBtn)
+	footer := container.NewPadded(container.New(&ratioLayout{ratio: 5.0 / 6.0}, saveBtn))
 
-	mainContent := container.NewBorder(nil, footer, nil, nil, scroll)
-	return container.New(&ratioLayout{ratio: 5.0 / 6.0}, mainContent)
+	return container.NewBorder(nil, footer, nil, nil, scroll)
 }

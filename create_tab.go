@@ -589,22 +589,18 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	})
 
-	testBtn := widget.NewButton("Test API Key", func() {
-		go s.TestAPI()
-	})
-
 	btnLine1 := container.NewHBox(newImgBtn, addTaskBtn, totalCostLabel, modeSelect)
-	btnLine2 := container.NewHBox(loadBtn, saveBtn, testBtn, runBtn)
+	btnLine2 := container.NewHBox(loadBtn, saveBtn, runBtn)
 	btnBox := container.NewVBox(btnLine1, btnLine2)
 
 	promptEntry.SetMinRowsVisible(8)
 
 	taskEditor := container.New(layout.NewFormLayout(),
 		widget.NewLabel("Source IDs:"), sourceIDsEntry,
-		widget.NewLabel("Positive Prompt:"), promptEntry,
-		widget.NewLabel("Negative Prompt:"), negPromptEntry,
+		widget.NewLabel("Positive\nPrompt:"), promptEntry,
+		widget.NewLabel("Negative\nPrompt:"), negPromptEntry,
 		widget.NewLabel("Tier:"), tierSelect,
-		widget.NewLabel("Aspect Ratio:"), ratioSelect,
+		widget.NewLabel("Aspect\nRatio:"), ratioSelect,
 		widget.NewLabel("Cost:"), costLabel,
 	)
 
