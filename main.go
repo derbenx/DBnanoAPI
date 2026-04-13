@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,6 +57,8 @@ func main() {
 		NextImageID: 1,
 		NextTaskID:  1,
 	}
+
+	state.LoadJobs()
 
 	// Shared Log
 	state.ModelLog = widget.NewLabel("To start, drag and drop an image or click 'New Image'...")
@@ -252,6 +255,29 @@ func (s *AppState) LogToFile(msg string) {
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	f.WriteString("[" + timestamp + "] " + msg + "\n")
+}
+
+func (s *AppState) LoadJobs() {
+	f, err := os.Open("jobs.txt")
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		id := scanner.Text()
+		if id == "" {
+			continue
+		}
+		s.BatchJobs = append(s.BatchJobs, &BatchJob{
+			JobID:       id,
+			Status:      "Submitted",
+			SubmittedAt: time.Now(),
+			Progress:    "0%",
+		})
+	}
+	s.Log(fmt.Sprintf("Loaded %d batch jobs from jobs.txt", len(s.BatchJobs)))
 }
 
 func (s *AppState) AddImages(paths []string) {
