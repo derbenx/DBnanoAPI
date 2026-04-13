@@ -73,6 +73,9 @@ func main() {
 		container.NewTabItem("Settings", settingsTab),
 		container.NewTabItem("Help", helpTab),
 	)
+	tabs.OnSelected = func(t *container.TabItem) {
+		// Update app state or just let the index handle it
+	}
 
 	logScroll := container.NewVScroll(state.ModelLog)
 	logScroll.SetMinSize(fyne.NewSize(0, 30))
@@ -145,6 +148,25 @@ func main() {
 	})
 
 	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
+		// Tab Navigation
+		if (k.Name == fyne.KeyTab) && (k.Modifier == fyne.KeyModifierControl || k.Modifier == (fyne.KeyModifierControl|fyne.KeyModifierShift)) {
+			current := tabs.SelectedIndex()
+			count := len(tabs.Items)
+			if k.Modifier == (fyne.KeyModifierControl | fyne.KeyModifierShift) {
+				current--
+				if current < 0 {
+					current = count - 1
+				}
+			} else {
+				current++
+				if current >= count {
+					current = 0
+				}
+			}
+			tabs.SelectIndex(current)
+			return
+		}
+
 		if k.Name == fyne.KeyDelete || k.Name == fyne.KeyBackspace {
 			// Don't delete items if user is typing in a text field
 			focused := w.Canvas().Focused()
@@ -195,7 +217,13 @@ func (s *AppState) Log(msg string) {
 
 	// UI Log
 	fyne.Do(func() {
-		s.ModelLog.SetText(s.ModelLog.Text + "\n[" + timestamp + "] " + msg)
+		lines := strings.Split(s.ModelLog.Text, "\n")
+		if len(lines) > 300 {
+			lines = lines[len(lines)-300:]
+		}
+		newText := strings.Join(lines, "\n") + "\n[" + timestamp + "] " + msg
+		s.ModelLog.SetText(newText)
+
 		if s.LogScroll != nil {
 			s.LogScroll.ScrollToBottom()
 		}

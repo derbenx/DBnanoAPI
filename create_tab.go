@@ -752,45 +752,69 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	}
 
 	saveBtn := widget.NewButton("Save Session", func() {
-		err := s.SaveSession()
-		if err != nil {
-			s.Log("Save failed: " + err.Error())
-		} else {
-			s.Log("Session saved successfully.")
-		}
+		fd := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
+			if err == nil && writer != nil {
+				p := writer.URI().Path()
+				err = s.SaveSession(p)
+				if err != nil {
+					s.Log("Save failed: " + err.Error())
+				} else {
+					s.Log("Session saved to: " + p)
+				}
+				writer.Close()
+			}
+		}, s.Window)
+
+		// Set default directory and filename
+		cwd, _ := os.Getwd()
+		fd.SetLocation(storage.NewFileURI(cwd))
+		fd.SetFileName("session.json")
+		fd.Resize(fyne.NewSize(800, 550))
+		fd.Show()
 	})
 
 	loadBtn := widget.NewButton("Load Session", func() {
-		err := s.LoadSession()
-		if err != nil {
-			s.Log("Load failed: " + err.Error())
-		} else {
-			// Update IDs to prevent collisions
-			maxImg := 0
-			for _, img := range s.Images {
-				id := 0
-				fmt.Sscanf(img.ID, "%d", &id)
-				if id > maxImg {
-					maxImg = id
+		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err == nil && reader != nil {
+				p := reader.URI().Path()
+				err = s.LoadSession(p)
+				if err != nil {
+					s.Log("Load failed: " + err.Error())
+				} else {
+					// Update IDs to prevent collisions
+					maxImg := 0
+					for _, img := range s.Images {
+						id := 0
+						fmt.Sscanf(img.ID, "%d", &id)
+						if id > maxImg {
+							maxImg = id
+						}
+					}
+					s.NextImageID = maxImg + 1
+
+					maxTask := 0
+					for _, t := range s.Tasks {
+						if t.ID > maxTask {
+							maxTask = t.ID
+						}
+					}
+					s.NextTaskID = maxTask + 1
+
+					imageList.Refresh()
+					taskList.Refresh()
+					if s.OnTasksUpdated != nil {
+						s.OnTasksUpdated()
+					}
+					s.Log("Session loaded from: " + p)
 				}
 			}
-			s.NextImageID = maxImg + 1
+		}, s.Window)
 
-			maxTask := 0
-			for _, t := range s.Tasks {
-				if t.ID > maxTask {
-					maxTask = t.ID
-				}
-			}
-			s.NextTaskID = maxTask + 1
-
-			imageList.Refresh()
-			taskList.Refresh()
-			if s.OnTasksUpdated != nil {
-				s.OnTasksUpdated()
-			}
-			s.Log("Session loaded successfully.")
-		}
+		// Set default directory
+		cwd, _ := os.Getwd()
+		fd.SetLocation(storage.NewFileURI(cwd))
+		fd.Resize(fyne.NewSize(800, 550))
+		fd.Show()
 	})
 
 	btnLine1 := container.NewHBox(newImgBtn, addTaskBtn, totalCostLabel, modeSelect)

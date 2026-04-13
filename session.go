@@ -19,8 +19,7 @@ func GetSessionPath() string {
 	return filepath.Join(filepath.Dir(execPath), sessionFileName)
 }
 
-func (s *AppState) SaveSession() error {
-	path := GetSessionPath()
+func (s *AppState) SaveSession(path string) error {
 	data := SessionData{
 		Images:    s.Images,
 		Tasks:     s.Tasks,
@@ -33,13 +32,9 @@ func (s *AppState) SaveSession() error {
 	return os.WriteFile(path, bytes, 0644)
 }
 
-func (s *AppState) LoadSession() error {
-	path := GetSessionPath()
+func (s *AppState) LoadSession(path string) error {
 	bytes, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
 		return err
 	}
 
