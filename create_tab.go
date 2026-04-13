@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -165,6 +167,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var runBtn *widget.Button
 	var overlayLayout *ratioOverlayLayout
 	var previewContainer *fyne.Container
+	var debounceTimer *time.Timer
+	var debounceLock sync.Mutex
 
 	updateRatioOverlay := func(ratioStr string) {
 		if overlayLayout == nil || previewContainer == nil {
@@ -523,9 +527,22 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	}
 
-	sourceIDsEntry.OnChanged = func(string) { updateTaskFromUI() }
-	promptEntry.OnChanged = func(string) { updateTaskFromUI() }
-	negPromptEntry.OnChanged = func(string) { updateTaskFromUI() }
+	debounceUpdate := func() {
+		debounceLock.Lock()
+		defer debounceLock.Unlock()
+
+		if debounceTimer != nil {
+			debounceTimer.Stop()
+		}
+
+		debounceTimer = time.AfterFunc(500*time.Millisecond, func() {
+			fyne.Do(updateTaskFromUI)
+		})
+	}
+
+	sourceIDsEntry.OnChanged = func(string) { debounceUpdate() }
+	promptEntry.OnChanged = func(string) { debounceUpdate() }
+	negPromptEntry.OnChanged = func(string) { debounceUpdate() }
 	tierSelect.OnChanged = func(str string) {
 		if strings.Contains(str, "Nano 2") {
 			ratioSelect.Options = ratioOptionsExt
