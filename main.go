@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -83,7 +84,11 @@ func main() {
 	state.LogSplit = logSplit
 	w.SetContent(logSplit)
 
-	w.Resize(fyne.NewSize(state.Config.WindowWidth, state.Config.WindowHeight))
+	if state.Config.IsMaximized {
+		w.Maximize()
+	} else {
+		w.Resize(fyne.NewSize(state.Config.WindowWidth, state.Config.WindowHeight))
+	}
 
 	// Background Monitoring
 	go func() {
@@ -165,8 +170,14 @@ func main() {
 
 	// Capture state on close
 	w.SetOnClosed(func() {
-		state.Config.WindowWidth = w.Canvas().Size().Width
-		state.Config.WindowHeight = w.Canvas().Size().Height
+		if dw, ok := w.(desktop.Window); ok {
+			state.Config.IsMaximized = dw.Maximized()
+		}
+
+		if !state.Config.IsMaximized {
+			state.Config.WindowWidth = w.Canvas().Size().Width
+			state.Config.WindowHeight = w.Canvas().Size().Height
+		}
 		state.Config.LogSplitOffset = state.LogSplit.Offset
 		if state.MainSplit != nil {
 			state.Config.SplitOffsetMain = state.MainSplit.Offset
