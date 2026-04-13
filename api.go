@@ -473,10 +473,14 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 
 	// Normalize status
 	status := res.State
+	if status == "" {
+		status = "UNKNOWN"
+	}
 	if strings.HasPrefix(status, "BATCH_STATE_") {
 		status = status[len("BATCH_STATE_"):]
 	}
 	job.Status = status
+	s.Log(fmt.Sprintf("Batch %s status: %s", job.JobID, status))
 
 	if status == "SUCCEEDED" {
 		if res.ResponsesFile != "" {

@@ -20,14 +20,17 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 		func() int { return len(state.BatchJobs) },
 		func() fyne.CanvasObject {
 			status := widget.NewLabel("")
+			status.Truncation = fyne.TextTruncateEllipsis
 			progress := widget.NewLabel("")
+			progress.Truncation = fyne.TextTruncateEllipsis
 			submitted := widget.NewLabel("")
 			jobID := widget.NewLabel("")
+			jobID.Truncation = fyne.TextTruncateEllipsis
 
 			content := container.NewHBox(
-				fixedWidth(status, 120),
-				fixedWidth(progress, 80),
-				fixedWidth(submitted, 100),
+				fixedWidth(status, 150),
+				fixedWidth(progress, 100),
+				fixedWidth(submitted, 120),
 				fixedWidth(jobID, 500),
 			)
 			return content
@@ -43,9 +46,9 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 	)
 
 	headers := container.NewHBox(
-		fixedWidth(widget.NewLabel("Status"), 120),
-		fixedWidth(widget.NewLabel("Progress"), 80),
-		fixedWidth(widget.NewLabel("Submitted"), 100),
+		fixedWidth(widget.NewLabel("Status"), 150),
+		fixedWidth(widget.NewLabel("Progress"), 100),
+		fixedWidth(widget.NewLabel("Submitted"), 120),
 		fixedWidth(widget.NewLabel("JobID"), 500),
 	)
 
