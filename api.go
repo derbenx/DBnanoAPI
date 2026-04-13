@@ -14,8 +14,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"fyne.io/fyne/v2"
 )
 
 type ImagenRequest struct {

@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -144,25 +145,25 @@ func main() {
 		}
 	})
 
-	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
-		// Tab Navigation
-		if (k.Name == fyne.KeyTab) && (k.Modifier == fyne.KeyModifierControl || k.Modifier == (fyne.KeyModifierControl|fyne.KeyModifierShift)) {
-			current := tabs.SelectedIndex()
-			count := len(tabs.Items)
-			if k.Modifier == (fyne.KeyModifierControl | fyne.KeyModifierShift) {
-				current--
-				if current < 0 {
-					current = count - 1
-				}
-			} else {
-				current++
-				if current >= count {
-					current = 0
-				}
-			}
-			tabs.SelectIndex(current)
-			return
+	w.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyTab, Modifier: fyne.KeyModifierControl}, func(shortcut fyne.Shortcut) {
+		current := tabs.SelectedIndex()
+		current++
+		if current >= len(tabs.Items) {
+			current = 0
 		}
+		tabs.SelectIndex(current)
+	})
+
+	w.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyTab, Modifier: fyne.KeyModifierControl | fyne.KeyModifierShift}, func(shortcut fyne.Shortcut) {
+		current := tabs.SelectedIndex()
+		current--
+		if current < 0 {
+			current = len(tabs.Items) - 1
+		}
+		tabs.SelectIndex(current)
+	})
+
+	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
 
 		if k.Name == fyne.KeyDelete || k.Name == fyne.KeyBackspace {
 			// Don't delete items if user is typing in a text field
