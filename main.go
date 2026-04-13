@@ -59,10 +59,9 @@ func main() {
 		NextTaskID:  1,
 	}
 
-	state.LoadJobs()
-
 	// Shared Log
 	state.ModelLog = widget.NewLabel("To start, drag and drop an image or click 'New Image'...")
+	state.LoadJobs()
 	state.ModelLog.Wrapping = fyne.TextWrapBreak
 
 	// Tabs
