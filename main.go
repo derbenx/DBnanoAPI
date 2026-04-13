@@ -26,6 +26,7 @@ type AppState struct {
 
 	BatchProgressBar *widget.ProgressBar
 	BatchStatusLabel *widget.Label
+	BatchList        *widget.List
 
 	NextImageID int
 	NextTaskID  int
@@ -118,7 +119,9 @@ func main() {
 						state.Log("Status check error: " + err.Error())
 					}
 				}
-				batchesTab.Refresh()
+				if state.BatchList != nil {
+					state.BatchList.Refresh()
+				}
 				nextCheck = time.Now().Add(interval)
 				remaining = interval
 			}

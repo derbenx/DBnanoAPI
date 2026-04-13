@@ -16,7 +16,7 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 		return container.NewStack(rect, obj)
 	}
 
-	batchList := widget.NewList(
+	state.BatchList = widget.NewList(
 		func() int { return len(state.BatchJobs) },
 		func() fyne.CanvasObject {
 			status := widget.NewLabel("")
@@ -60,7 +60,7 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 			newJobs = append(newJobs, job)
 		}
 		state.BatchJobs = newJobs
-		batchList.Refresh()
+		state.BatchList.Refresh()
 		state.CleanupJobsFile()
 		state.Log("Cleared completed batch jobs.")
 	})
@@ -70,7 +70,7 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 	state.BatchProgressBar.Max = 1
 	state.BatchStatusLabel = widget.NewLabel("No active batch jobs.")
 
-	scroll := container.NewHScroll(container.NewBorder(headers, nil, nil, nil, batchList))
+	scroll := container.NewHScroll(container.NewBorder(headers, nil, nil, nil, state.BatchList))
 	scroll.SetMinSize(fyne.NewSize(0, 400))
 
 	bottom := container.NewVBox(
