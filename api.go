@@ -245,13 +245,11 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 		return err
 	}
 
-	fyne.Do(func() {
-		s.BatchJobs = append(s.BatchJobs, &BatchJob{
-			JobID:       res.Name,
-			Status:      "Submitted",
-			SubmittedAt: time.Now(),
-			Progress:    "0%",
-		})
+	s.BatchJobs = append(s.BatchJobs, &BatchJob{
+		JobID:       res.Name,
+		Status:      "Submitted",
+		SubmittedAt: time.Now(),
+		Progress:    "0%",
 	})
 
 	s.Log("Batch Job Submitted: " + res.Name)

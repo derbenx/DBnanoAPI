@@ -527,7 +527,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 	}
 
-	debounceUpdate := func() {
+	debounceUpdate := func(delay time.Duration) {
 		debounceLock.Lock()
 		defer debounceLock.Unlock()
 
@@ -535,14 +535,14 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			debounceTimer.Stop()
 		}
 
-		debounceTimer = time.AfterFunc(500*time.Millisecond, func() {
-			fyne.Do(updateTaskFromUI)
+		debounceTimer = time.AfterFunc(delay, func() {
+			updateTaskFromUI()
 		})
 	}
 
-	sourceIDsEntry.OnChanged = func(string) { debounceUpdate() }
-	promptEntry.OnChanged = func(string) { debounceUpdate() }
-	negPromptEntry.OnChanged = func(string) { debounceUpdate() }
+	sourceIDsEntry.OnChanged = func(string) { debounceUpdate(2000 * time.Millisecond) }
+	promptEntry.OnChanged = func(string) { debounceUpdate(500 * time.Millisecond) }
+	negPromptEntry.OnChanged = func(string) { debounceUpdate(500 * time.Millisecond) }
 	tierSelect.OnChanged = func(str string) {
 		if strings.Contains(str, "Nano 2") {
 			ratioSelect.Options = ratioOptionsExt
@@ -670,7 +670,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	runBtn = widget.NewButton("RUN IMMEDIATE", func() {
 		runBtn.Disable()
 		go func() {
-			defer fyne.Do(runBtn.Enable)
+			defer runBtn.Enable()
 			processedCount := 0
 			batchTasks := make(map[string][]*TaskInfo)
 
@@ -694,41 +694,36 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				}
 
 				processedCount++
-				fyne.Do(func() {
-					task.Status = "Running"
-					taskList.Refresh()
-				})
+				task.Status = "Running"
+				taskList.Refresh()
+
 				s.Log(fmt.Sprintf("[%d] Running %s...", i+1, task.Agent))
 				err := s.RunTask(task)
-				fyne.Do(func() {
-					if err != nil {
-						task.Status = "Failed"
-						s.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
-					} else {
-						task.Status = "Success"
-					}
-					taskList.Refresh()
-					if s.OnTasksUpdated != nil {
-						s.OnTasksUpdated()
-					}
-				})
+				if err != nil {
+					task.Status = "Failed"
+					s.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
+				} else {
+					task.Status = "Success"
+				}
+				taskList.Refresh()
+				if s.OnTasksUpdated != nil {
+					s.OnTasksUpdated()
+				}
 			}
 
 			for agent, tasks := range batchTasks {
 				processedCount++
 				s.Log(fmt.Sprintf("Submitting batch for %s (%d tasks)...", agent, len(tasks)))
 				err := s.SubmitBatchJob(tasks)
-				fyne.Do(func() {
-					status := "Submitted"
-					if err != nil {
-						status = "Failed"
-						s.Log("Batch Submission Error: " + err.Error())
-					}
-					for _, t := range tasks {
-						t.Status = status
-					}
-					taskList.Refresh()
-				})
+				status := "Submitted"
+				if err != nil {
+					status = "Failed"
+					s.Log("Batch Submission Error: " + err.Error())
+				}
+				for _, t := range tasks {
+					t.Status = status
+				}
+				taskList.Refresh()
 			}
 
 			if processedCount == 0 {
@@ -767,7 +762,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 		// Set default directory and filename
 		cwd, _ := os.Getwd()
-		fd.SetLocation(storage.NewFileURI(cwd))
+		if lister, err := storage.ListerForURI(storage.NewFileURI(cwd)); err == nil {
+			fd.SetLocation(lister)
+		}
 		fd.SetFileName("session.json")
 		fd.Resize(fyne.NewSize(800, 550))
 		fd.Show()
@@ -812,7 +809,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 		// Set default directory
 		cwd, _ := os.Getwd()
-		fd.SetLocation(storage.NewFileURI(cwd))
+		if lister, err := storage.ListerForURI(storage.NewFileURI(cwd)); err == nil {
+			fd.SetLocation(lister)
+		}
 		fd.Resize(fyne.NewSize(800, 550))
 		fd.Show()
 	})

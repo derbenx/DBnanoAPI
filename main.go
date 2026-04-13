@@ -100,10 +100,8 @@ func main() {
 		for range ticker.C {
 			if len(state.BatchJobs) == 0 {
 				if state.BatchProgressBar != nil {
-					fyne.Do(func() {
-						state.BatchProgressBar.SetValue(0)
-						state.BatchStatusLabel.SetText("No active batch jobs.")
-					})
+					state.BatchProgressBar.SetValue(0)
+					state.BatchStatusLabel.SetText("No active batch jobs.")
 				}
 				continue
 			}
@@ -120,19 +118,15 @@ func main() {
 						state.Log("Status check error: " + err.Error())
 					}
 				}
-				fyne.Do(func() {
-					batchesTab.Refresh()
-				})
+				batchesTab.Refresh()
 				nextCheck = time.Now().Add(interval)
 				remaining = interval
 			}
 
 			if state.BatchProgressBar != nil {
-				fyne.Do(func() {
-					elapsed := interval - remaining
-					state.BatchProgressBar.SetValue(float64(elapsed) / float64(interval))
-					state.BatchStatusLabel.SetText(fmt.Sprintf("Next status check in %d seconds...", int(remaining.Seconds())))
-				})
+				elapsed := interval - remaining
+				state.BatchProgressBar.SetValue(float64(elapsed) / float64(interval))
+				state.BatchStatusLabel.SetText(fmt.Sprintf("Next status check in %d seconds...", int(remaining.Seconds())))
 			}
 		}
 	}()
@@ -219,18 +213,16 @@ func (s *AppState) Log(msg string) {
 	timestamp := time.Now().Format("15:04:05")
 
 	// UI Log
-	fyne.Do(func() {
-		lines := strings.Split(s.ModelLog.Text, "\n")
-		if len(lines) > 300 {
-			lines = lines[len(lines)-300:]
-		}
-		newText := strings.Join(lines, "\n") + "\n[" + timestamp + "] " + msg
-		s.ModelLog.SetText(newText)
+	lines := strings.Split(s.ModelLog.Text, "\n")
+	if len(lines) > 300 {
+		lines = lines[len(lines)-300:]
+	}
+	newText := strings.Join(lines, "\n") + "\n[" + timestamp + "] " + msg
+	s.ModelLog.SetText(newText)
 
-		if s.LogScroll != nil {
-			s.LogScroll.ScrollToBottom()
-		}
-	})
+	if s.LogScroll != nil {
+		s.LogScroll.ScrollToBottom()
+	}
 
 	// Debug.log file
 	if s.Config.Debug {
