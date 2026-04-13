@@ -19,34 +19,34 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 	batchList := widget.NewList(
 		func() int { return len(state.BatchJobs) },
 		func() fyne.CanvasObject {
-			jobID := widget.NewLabel("")
 			status := widget.NewLabel("")
-			submitted := widget.NewLabel("")
 			progress := widget.NewLabel("")
+			submitted := widget.NewLabel("")
+			jobID := widget.NewLabel("")
 
 			content := container.NewHBox(
-				fixedWidth(jobID, 250),
-				fixedWidth(status, 150),
-				fixedWidth(submitted, 100),
+				fixedWidth(status, 120),
 				fixedWidth(progress, 80),
+				fixedWidth(submitted, 100),
+				fixedWidth(jobID, 500),
 			)
 			return content
 		},
 		func(id widget.ListItemID, cell fyne.CanvasObject) {
 			job := state.BatchJobs[id]
 			hbox := cell.(*fyne.Container)
-			hbox.Objects[0].(*fyne.Container).Objects[1].(*widget.Label).SetText(job.JobID)
-			hbox.Objects[1].(*fyne.Container).Objects[1].(*widget.Label).SetText(job.Status)
+			hbox.Objects[0].(*fyne.Container).Objects[1].(*widget.Label).SetText(job.Status)
+			hbox.Objects[1].(*fyne.Container).Objects[1].(*widget.Label).SetText(job.Progress)
 			hbox.Objects[2].(*fyne.Container).Objects[1].(*widget.Label).SetText(job.SubmittedAt.Format("15:04:05"))
-			hbox.Objects[3].(*fyne.Container).Objects[1].(*widget.Label).SetText(job.Progress)
+			hbox.Objects[3].(*fyne.Container).Objects[1].(*widget.Label).SetText(job.JobID)
 		},
 	)
 
 	headers := container.NewHBox(
-		fixedWidth(widget.NewLabel("JobID"), 250),
-		fixedWidth(widget.NewLabel("Status"), 150),
-		fixedWidth(widget.NewLabel("Submitted"), 100),
+		fixedWidth(widget.NewLabel("Status"), 120),
 		fixedWidth(widget.NewLabel("Progress"), 80),
+		fixedWidth(widget.NewLabel("Submitted"), 100),
+		fixedWidth(widget.NewLabel("JobID"), 500),
 	)
 
 	clearBtn := widget.NewButton("Clear Completed", func() {
