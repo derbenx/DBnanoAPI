@@ -188,21 +188,35 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	// 1. Create JSONL data
 	var buf bytes.Buffer
 	for i, t := range tasks {
-		payload, err := s.BuildPayload(t)
+		// Build the standard payload
+		req, err := s.BuildGeminiRequest(t)
 		if err != nil {
 			continue
 		}
 
-		// Wrap in Batch format
-		// Note: Gemini Batch request structure is slightly different for JSONL
+		// Wrap in Batch format which requires the "model" field inside the request
+		type BatchRequest struct {
+			Model             string             `json:"model"`
+			Contents          []Content          `json:"contents"`
+			SystemInstruction *Content           `json:"systemInstruction,omitempty"`
+			SafetySettings    []SafetySetting    `json:"safetySettings"`
+			GenerationConfig  *GenerationConfig  `json:"generationConfig,omitempty"`
+		}
+
 		type BatchReqEntry struct {
-			CustomID string          `json:"custom_id"`
-			Request  json.RawMessage `json:"request"`
+			CustomID string       `json:"custom_id"`
+			Request  BatchRequest `json:"request"`
 		}
 
 		entry := BatchReqEntry{
 			CustomID: fmt.Sprintf("task_%d_%d", t.ID, i),
-			Request:  payload,
+			Request: BatchRequest{
+				Model:             "models/" + modelID,
+				Contents:          req.Contents,
+				SystemInstruction: req.SystemInstruction,
+				SafetySettings:    req.SafetySettings,
+				GenerationConfig:  req.GenerationConfig,
+			},
 		}
 		line, _ := json.Marshal(entry)
 		buf.Write(line)
@@ -323,7 +337,7 @@ func (s *AppState) BuildImagenPayload(task *TaskInfo) ([]byte, error) {
 	return json.Marshal(req)
 }
 
-func (s *AppState) BuildPayload(task *TaskInfo) ([]byte, error) {
+func (s *AppState) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
 	fullPrompt := fmt.Sprintf("USER DIRECTIVE: %s. Aspect Ratio: %s. Avoid: %s", task.Prompt, task.Ratio, task.NegativePrompt)
 	parts := []Part{{Text: fullPrompt}}
 	encourage := s.Config.EncourageGen
@@ -346,7 +360,7 @@ func (s *AppState) BuildPayload(task *TaskInfo) ([]byte, error) {
 		}
 	}
 
-	req := GeminiRequest{
+	req := &GeminiRequest{
 		Contents: []Content{{Parts: parts}},
 		SystemInstruction: &Content{Parts: []Part{{
 			Text: encourage,
@@ -366,6 +380,14 @@ func (s *AppState) BuildPayload(task *TaskInfo) ([]byte, error) {
 		},
 	}
 
+	return req, nil
+}
+
+func (s *AppState) BuildPayload(task *TaskInfo) ([]byte, error) {
+	req, err := s.BuildGeminiRequest(task)
+	if err != nil {
+		return nil, err
+	}
 	return json.Marshal(req)
 }
 
@@ -450,6 +472,29 @@ func (s *AppState) TestAPI() error {
 	return nil
 }
 
+func (s *AppState) findJSONString(data interface{}, targetKey string) string {
+	switch v := data.(type) {
+	case map[string]interface{}:
+		for k, val := range v {
+			if k == targetKey {
+				if str, ok := val.(string); ok {
+					return str
+				}
+			}
+			if found := s.findJSONString(val, targetKey); found != "" {
+				return found
+			}
+		}
+	case []interface{}:
+		for _, item := range v {
+			if found := s.findJSONString(item, targetKey); found != "" {
+				return found
+			}
+		}
+	}
+	return ""
+}
+
 func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s?key=%s", job.JobID, s.Config.APIKey)
 	resp, err := http.Get(url)
@@ -463,33 +508,38 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 		return s.HandleError(body, resp.StatusCode)
 	}
 
-	var res struct {
-		State         string `json:"state"`
-		ResponsesFile string `json:"responsesFile"`
-	}
+	var res interface{}
 	if err := json.Unmarshal(body, &res); err != nil {
 		return err
 	}
 
-	// Normalize status
-	status := res.State
-	if status == "" {
+	// Log raw response to debug file for troubleshooting
+	s.LogToFile(fmt.Sprintf("Raw Status Response for %s: %s", job.JobID, string(body)))
+
+	// Robustly find 'state' and normalization
+	state := s.findJSONString(res, "state")
+	if state == "" {
 		if job.Status == "" {
-			status = "UNKNOWN"
+			state = "UNKNOWN"
 		} else {
-			status = job.Status // Keep current if empty from API
+			state = job.Status // Keep current if empty from API
 		}
 	}
-	if strings.HasPrefix(status, "BATCH_STATE_") {
-		status = status[len("BATCH_STATE_"):]
+	if strings.HasPrefix(state, "BATCH_STATE_") {
+		state = state[len("BATCH_STATE_"):]
 	}
-	job.Status = status
-	s.Log(fmt.Sprintf("Batch %s status: %s", job.JobID, status))
+	job.Status = state
+	s.Log(fmt.Sprintf("Batch %s status: %s", job.JobID, state))
 
-	if status == "SUCCEEDED" {
-		if res.ResponsesFile != "" {
+	if state == "SUCCEEDED" {
+		respFile := s.findJSONString(res, "responseFile")
+		if respFile == "" {
+			respFile = s.findJSONString(res, "responsesFile")
+		}
+
+		if respFile != "" {
 			s.Log("Batch " + job.JobID + " succeeded. Downloading results...")
-			return s.DownloadBatchResults(res.ResponsesFile)
+			return s.DownloadBatchResults(respFile)
 		}
 	}
 	return nil
