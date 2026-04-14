@@ -211,7 +211,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	// Image List
 	imageList = widget.NewList(
-		func() int { return len(s.Images) },
+		func() int {
+			s.Mu.RLock()
+			defer s.Mu.RUnlock()
+			return len(s.Images)
+		},
 		func() fyne.CanvasObject {
 			check := widget.NewCheck("", nil)
 			id := widget.NewLabel("")
@@ -230,6 +234,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			return newTappableListItem(content, 0, nil, nil)
 		},
 		func(id widget.ListItemID, cell fyne.CanvasObject) {
+			s.Mu.RLock()
+			defer s.Mu.RUnlock()
+			if id >= len(s.Images) {
+				return
+			}
 			item := cell.(*tappableListItem)
 			item.id = id
 			img := s.Images[id]
@@ -294,7 +303,13 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	)
 
 	imageList.OnSelected = func(id widget.ListItemID) {
+		s.Mu.RLock()
+		if id >= len(s.Images) {
+			s.Mu.RUnlock()
+			return
+		}
 		img := s.Images[id]
+		s.Mu.RUnlock()
 		selectedImgID = img.ID
 		selectedTaskID = -1
 		taskList.UnselectAll()
@@ -310,7 +325,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	// Task List
 	taskList = widget.NewList(
-		func() int { return len(s.Tasks) },
+		func() int {
+			s.Mu.RLock()
+			defer s.Mu.RUnlock()
+			return len(s.Tasks)
+		},
 		func() fyne.CanvasObject {
 			id := widget.NewLabel("")
 			agent := widget.NewLabel("")
@@ -329,6 +348,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			return newTappableListItem(content, 0, nil, nil)
 		},
 		func(id widget.ListItemID, cell fyne.CanvasObject) {
+			s.Mu.RLock()
+			defer s.Mu.RUnlock()
+			if id >= len(s.Tasks) {
+				return
+			}
 			item := cell.(*tappableListItem)
 			item.id = id
 			task := s.Tasks[id]
@@ -407,7 +431,13 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	}
 
 	taskList.OnSelected = func(id widget.ListItemID) {
+		s.Mu.RLock()
+		if id >= len(s.Tasks) {
+			s.Mu.RUnlock()
+			return
+		}
 		task := s.Tasks[id]
+		s.Mu.RUnlock()
 		selectedTaskID = task.ID
 		selectedImgID = ""
 		imageList.UnselectAll()
@@ -468,6 +498,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	costLabel = widget.NewLabel("$0.00")
 
 	updateTaskFromUI := func() {
+		s.Mu.Lock()
+		defer s.Mu.Unlock()
 		var task *TaskInfo
 		if selectedTaskID != -1 {
 			for _, t := range s.Tasks {
@@ -574,6 +606,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	tierSelect.SetSelected("Nano Flash 1K")
 
 	modeSelect = widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(m string) {
+		s.Mu.Lock()
 		s.GlobalMode = m
 		s.Log("Mode switched to: " + m)
 
@@ -595,6 +628,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		if task != nil {
 			costLabel.SetText(fmt.Sprintf("$%.4f", task.Cost))
 		}
+		s.Mu.Unlock()
 		taskList.Refresh()
 		if s.OnTasksUpdated != nil {
 			s.OnTasksUpdated()
@@ -606,15 +640,18 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	// --- Buttons ---
 
 	newImgBtn := widget.NewButton("New Image", func() {
+		s.Mu.Lock()
 		s.Images = append(s.Images, &ImageInfo{
 			ID:       fmt.Sprintf("%d", len(s.Images)+1),
 			FileName: "GENERATE",
 			FullPath: "<GENERATE>",
 		})
+		s.Mu.Unlock()
 		imageList.Refresh()
 	})
 
 	addTaskBtn := widget.NewButton("Add Task", func() {
+		s.Mu.Lock()
 		var imgIDs []string
 		var paths []string
 
@@ -638,6 +675,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 
 		if len(paths) == 0 {
+			s.Mu.Unlock()
 			s.Log("Error: Select images (checkbox) first!")
 			return
 		}
@@ -675,6 +713,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		}
 		s.Tasks = append(s.Tasks, newTask)
 		s.NextTaskID++
+		s.Mu.Unlock()
 
 		imageList.Refresh()
 		taskList.Refresh()
@@ -692,7 +731,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			processedCount := 0
 			batchTasks := make(map[string][]*TaskInfo)
 
-			for i, task := range s.Tasks {
+			s.Mu.RLock()
+			taskListCopy := make([]*TaskInfo, len(s.Tasks))
+			copy(taskListCopy, s.Tasks)
+			s.Mu.RUnlock()
+
+			for i, task := range taskListCopy {
 				if task.Disabled {
 					continue
 				}
@@ -712,16 +756,21 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				}
 
 				processedCount++
+				s.Mu.Lock()
 				task.Status = "Running"
+				s.Mu.Unlock()
 				taskList.Refresh()
 
 				s.Log(fmt.Sprintf("[%d] Running %s...", i+1, task.Agent))
 				err := s.RunTask(task)
+				s.Mu.Lock()
 				if err != nil {
 					task.Status = "Failed"
+					s.Mu.Unlock()
 					s.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
 				} else {
 					task.Status = "Success"
+					s.Mu.Unlock()
 				}
 				taskList.Refresh()
 				if s.OnTasksUpdated != nil {
@@ -738,9 +787,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					status = "Failed"
 					s.Log("Batch Submission Error: " + err.Error())
 				}
+				s.Mu.Lock()
 				for _, t := range tasks {
 					t.Status = status
 				}
+				s.Mu.Unlock()
 				taskList.Refresh()
 			}
 
@@ -758,9 +809,11 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	totalCostLabel := widget.NewLabel("Total: $0.0000")
 	s.OnTasksUpdated = func() {
 		total := 0.0
+		s.Mu.RLock()
 		for _, t := range s.Tasks {
 			total += t.Cost
 		}
+		s.Mu.RUnlock()
 		totalCostLabel.SetText(fmt.Sprintf("Total: $%.4f", total))
 	}
 
@@ -883,6 +936,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	s.OnImagesUpdated = func() {
 		imageList.Refresh()
+		s.Mu.RLock()
+		defer s.Mu.RUnlock()
 		if len(s.Images) > 0 {
 			// If no selection, or if we want to snap to the latest addition
 			// we select the LAST added image (most natural for drops)
@@ -911,6 +966,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	}
 
 	s.DeleteHandler = func() {
+		s.Mu.Lock()
+		defer s.Mu.Unlock()
 		if selectedTaskID != -1 {
 			var idx = -1
 			for i, t := range s.Tasks {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -16,6 +17,7 @@ import (
 )
 
 type AppState struct {
+	Mu         sync.RWMutex
 	Config     *Config
 	Images     []*ImageInfo
 	Tasks      []*TaskInfo
@@ -24,6 +26,7 @@ type AppState struct {
 	LogLines   []string
 	LogScroll  *container.Scroll
 	Window     fyne.Window
+	HTTPClient *http.Client
 
 	BatchProgressBar *widget.ProgressBar
 	BatchStatusLabel *widget.Label
@@ -61,19 +64,30 @@ func main() {
 		Window:      w,
 		NextImageID: 1,
 		NextTaskID:  1,
+		HTTPClient: &http.Client{
+			Timeout: 5 * time.Minute,
+		},
 	}
 
 	// Shared Log
 	state.LogLines = []string{"To start, drag and drop an image or click 'New Image'..."}
 	state.ModelLog = widget.NewList(
-		func() int { return len(state.LogLines) },
+		func() int {
+			state.Mu.RLock()
+			defer state.Mu.RUnlock()
+			return len(state.LogLines)
+		},
 		func() fyne.CanvasObject {
 			l := widget.NewLabel("")
 			l.Wrapping = fyne.TextWrapBreak
 			return l
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			obj.(*widget.Label).SetText(state.LogLines[id])
+			state.Mu.RLock()
+			defer state.Mu.RUnlock()
+			if id < len(state.LogLines) {
+				obj.(*widget.Label).SetText(state.LogLines[id])
+			}
 		},
 	)
 	state.LoadJobs()
@@ -100,11 +114,7 @@ func main() {
 	w.SetContent(logSplit)
 
 	w.Resize(fyne.NewSize(state.Config.WindowWidth, state.Config.WindowHeight))
-	if state.Config.IsMaximized {
-		w.Maximize()
-	} else {
-		w.CenterOnScreen()
-	}
+	w.CenterOnScreen()
 
 	// Background Monitoring
 	go func() {
@@ -113,7 +123,9 @@ func main() {
 		ticker := time.NewTicker(1 * time.Second)
 		lastJobsLen := -1
 		for range ticker.C {
+			state.Mu.RLock()
 			jobsLen := len(state.BatchJobs)
+			state.Mu.RUnlock()
 			if jobsLen == 0 {
 				if state.BatchProgressBar != nil && (lastJobsLen != 0) {
 					state.BatchProgressBar.SetValue(0)
@@ -127,6 +139,7 @@ func main() {
 			remaining := time.Until(nextCheck)
 			if remaining <= 0 {
 				// 1. Identify active jobs
+				state.Mu.RLock()
 				var activeJobs []*BatchJob
 				for _, job := range state.BatchJobs {
 					s := job.Status
@@ -134,6 +147,7 @@ func main() {
 						activeJobs = append(activeJobs, job)
 					}
 				}
+				state.Mu.RUnlock()
 
 				if len(activeJobs) > 0 {
 					// 2. Cycle to the next job
@@ -202,24 +216,7 @@ func main() {
 	})
 
 	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
-
 		focused := w.Canvas().Focused()
-
-		// List Arrow Navigation
-		if k.Name == fyne.KeyUp || k.Name == fyne.KeyDown {
-			if list, ok := focused.(*widget.List); ok {
-				selected := list.Selected
-				if len(selected) > 0 {
-					current := selected[0]
-					if k.Name == fyne.KeyUp && current > 0 {
-						list.Select(current - 1)
-					} else if k.Name == fyne.KeyDown && current < list.Length()-1 {
-						list.Select(current + 1)
-					}
-					return
-				}
-			}
-		}
 
 		if k.Name == fyne.KeyDelete || k.Name == fyne.KeyBackspace {
 			// Don't delete items if user is typing in a text field
@@ -246,11 +243,8 @@ func main() {
 			diskCfg = state.Config
 		}
 
-		diskCfg.IsMaximized = w.IsMaximized()
-		if !diskCfg.IsMaximized {
-			diskCfg.WindowWidth = w.Canvas().Size().Width
-			diskCfg.WindowHeight = w.Canvas().Size().Height
-		}
+		diskCfg.WindowWidth = w.Canvas().Size().Width
+		diskCfg.WindowHeight = w.Canvas().Size().Height
 		diskCfg.LogSplitOffset = state.LogSplit.Offset
 		if state.MainSplit != nil {
 			diskCfg.SplitOffsetMain = state.MainSplit.Offset
@@ -278,10 +272,13 @@ func (s *AppState) Log(msg string) {
 	entry := "[" + timestamp + "] " + msg
 
 	// UI Log
+	s.Mu.Lock()
 	s.LogLines = append(s.LogLines, entry)
 	if len(s.LogLines) > 300 {
 		s.LogLines = s.LogLines[len(s.LogLines)-300:]
 	}
+	s.Mu.Unlock()
+
 	if s.ModelLog != nil {
 		s.ModelLog.Refresh()
 		s.ModelLog.ScrollToBottom()
@@ -319,6 +316,7 @@ func (s *AppState) LoadJobs() {
 	}
 	defer f.Close()
 
+	s.Mu.Lock()
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		id := scanner.Text()
@@ -332,10 +330,14 @@ func (s *AppState) LoadJobs() {
 			Progress:    "0%",
 		})
 	}
-	s.Log(fmt.Sprintf("Loaded %d batch jobs from jobs.txt", len(s.BatchJobs)))
+	count := len(s.BatchJobs)
+	s.Mu.Unlock()
+	s.Log(fmt.Sprintf("Loaded %d batch jobs from jobs.txt", count))
 }
 
 func (s *AppState) AddImages(paths []string) {
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
 	for _, p := range paths {
 		info, err := os.Stat(p)
 		if err != nil {

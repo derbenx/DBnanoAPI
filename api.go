@@ -150,7 +150,7 @@ func (s *AppState) RunTask(task *TaskInfo) error {
 		return err
 	}
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(reqBody))
+	resp, err := s.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return err
 	}
@@ -191,6 +191,7 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 		// Build the standard payload
 		req, err := s.BuildGeminiRequest(t)
 		if err != nil {
+			s.Log(fmt.Sprintf("Skipping task %d in batch: %v", t.ID, err))
 			continue
 		}
 
@@ -239,7 +240,7 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchGenerateContent?key=%s", modelID, s.Config.APIKey)
 	submitReq := fmt.Sprintf(`{"batch": {"input_config": {"file_name": "%s"}}}`, resourceName)
 
-	resp, err := http.Post(url, "application/json", strings.NewReader(submitReq))
+	resp, err := s.HTTPClient.Post(url, "application/json", strings.NewReader(submitReq))
 	if err != nil {
 		return err
 	}
@@ -257,12 +258,14 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 		return err
 	}
 
+	s.Mu.Lock()
 	s.BatchJobs = append(s.BatchJobs, &BatchJob{
 		JobID:       res.Name,
 		Status:      "Submitted",
 		SubmittedAt: time.Now(),
 		Progress:    "0%",
 	})
+	s.Mu.Unlock()
 
 	s.Log("Batch Job Submitted: " + res.Name)
 
@@ -303,7 +306,7 @@ func (s *AppState) UploadFile(data []byte) (string, error) {
 	req.Header.Set("X-Goog-Upload-Protocol", "multipart")
 	req.Header.Set("Content-Type", "multipart/related; boundary="+boundary)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.HTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -337,6 +340,22 @@ func (s *AppState) BuildImagenPayload(task *TaskInfo) ([]byte, error) {
 	return json.Marshal(req)
 }
 
+func getMimeType(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".heic":
+		return "image/heic"
+	case ".heif":
+		return "image/heif"
+	default:
+		return "image/jpeg"
+	}
+}
+
 func (s *AppState) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
 	fullPrompt := fmt.Sprintf("USER DIRECTIVE: %s. Aspect Ratio: %s. Avoid: %s", task.Prompt, task.Ratio, task.NegativePrompt)
 	parts := []Part{{Text: fullPrompt}}
@@ -348,12 +367,12 @@ func (s *AppState) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
 		for _, p := range paths {
 			data, err := os.ReadFile(p)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("could not read image %s: %v", p, err)
 			}
 			b64 := base64.StdEncoding.EncodeToString(data)
 			parts = append(parts, Part{
 				InlineData: &InlineData{
-					MimeType: "image/jpeg", // Simplified
+					MimeType: getMimeType(p),
 					Data:     b64,
 				},
 			})
@@ -429,7 +448,7 @@ func (s *AppState) HandleError(body []byte, status int) error {
 
 func (s *AppState) TestAPI() error {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", s.Config.APIKey)
-	resp, err := http.Get(url)
+	resp, err := s.HTTPClient.Get(url)
 	if err != nil {
 		return err
 	}
@@ -497,7 +516,7 @@ func (s *AppState) findJSONString(data interface{}, targetKey string) string {
 
 func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s?key=%s", job.JobID, s.Config.APIKey)
-	resp, err := http.Get(url)
+	resp, err := s.HTTPClient.Get(url)
 	if err != nil {
 		return err
 	}
@@ -548,12 +567,14 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 }
 
 func (s *AppState) CleanupJobsFile() {
+	s.Mu.RLock()
 	var activeIDs []string
 	for _, job := range s.BatchJobs {
 		if job.Status != "SUCCEEDED" && job.Status != "FAILED" && job.Status != "CANCELLED" && job.Status != "EXPIRED" && job.Status != "Success" && job.Status != "Failed" {
 			activeIDs = append(activeIDs, job.JobID)
 		}
 	}
+	s.Mu.RUnlock()
 
 	if len(activeIDs) == 0 {
 		os.Remove("jobs.txt")
@@ -573,7 +594,7 @@ func (s *AppState) CleanupJobsFile() {
 
 func (s *AppState) DownloadBatchResults(fileID string) error {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media&key=%s", fileID, s.Config.APIKey)
-	resp, err := http.Get(url)
+	resp, err := s.HTTPClient.Get(url)
 	if err != nil {
 		return err
 	}
@@ -645,6 +666,7 @@ func (s *AppState) ProcessBatchItem(respBody []byte, customID string) {
 }
 
 func (s *AppState) ProcessResponse(body []byte, task *TaskInfo) error {
+	s.LogToFile(fmt.Sprintf("DEBUG: Processing response for task %d. Body length: %d", task.ID, len(body)))
 	// 1. Try Gemini Candidates format
 	var geminiResp struct {
 		Candidates []struct {
@@ -684,7 +706,8 @@ func (s *AppState) ProcessResponse(body []byte, task *TaskInfo) error {
 		return s.SaveBase64Image(pred.BytesBase64Encoded, pred.MimeType, task.ID)
 	}
 
-	return fmt.Errorf("no image data in response: %s", string(body))
+	s.LogToFile(fmt.Sprintf("DEBUG: No image found in response for task %d. Body: %s", task.ID, string(body)))
+	return fmt.Errorf("no image data in response (Check debug.log for body)")
 }
 
 func (s *AppState) SaveBase64Image(b64, mime string, taskID int) error {

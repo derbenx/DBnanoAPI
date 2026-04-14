@@ -17,7 +17,11 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 	}
 
 	state.BatchList = widget.NewList(
-		func() int { return len(state.BatchJobs) },
+		func() int {
+			state.Mu.RLock()
+			defer state.Mu.RUnlock()
+			return len(state.BatchJobs)
+		},
 		func() fyne.CanvasObject {
 			status := widget.NewLabel("")
 			status.Truncation = fyne.TextTruncateEllipsis
@@ -36,6 +40,11 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 			return content
 		},
 		func(id widget.ListItemID, cell fyne.CanvasObject) {
+			state.Mu.RLock()
+			defer state.Mu.RUnlock()
+			if id >= len(state.BatchJobs) {
+				return
+			}
 			job := state.BatchJobs[id]
 			hbox := cell.(*fyne.Container)
 			hbox.Objects[0].(*fyne.Container).Objects[1].(*widget.Label).SetText(job.Status)
@@ -53,6 +62,7 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 	)
 
 	clearBtn := widget.NewButton("Clear Completed", func() {
+		state.Mu.Lock()
 		newJobs := []*BatchJob{}
 		for _, job := range state.BatchJobs {
 			// Filter out all terminal states
@@ -63,6 +73,7 @@ func makeBatchesTab(state *AppState) fyne.CanvasObject {
 			newJobs = append(newJobs, job)
 		}
 		state.BatchJobs = newJobs
+		state.Mu.Unlock()
 		state.BatchList.Refresh()
 		state.CleanupJobsFile()
 		state.Log("Cleared completed batch jobs.")
