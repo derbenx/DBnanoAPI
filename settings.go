@@ -45,8 +45,9 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 
 	apiKeyEntry := widget.NewPasswordEntry()
 	apiKeyEntry.SetText(state.Config.APIKey)
+	apiKeyEntry.OnChanged = func(s string) { state.Config.APIKey = s }
+
 	testBtn := widget.NewButton("Test API Key", func() {
-		state.Config.APIKey = apiKeyEntry.Text
 		go func() {
 			err := state.TestAPI()
 			if err != nil {
@@ -57,29 +58,34 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 
 	outputDirEntry := widget.NewEntry()
 	outputDirEntry.SetText(state.Config.OutputDir)
+	outputDirEntry.OnChanged = func(s string) { state.Config.OutputDir = s }
 	outputDirReset := makeReset(func() { outputDirEntry.SetText(def.OutputDir) })
 
 	defPromptEntry := NewTabbableEntry()
 	defPromptEntry.SetText(state.Config.DefaultPrompt)
 	defPromptEntry.Wrapping = fyne.TextWrapWord
+	defPromptEntry.OnChanged = func(s string) { state.Config.DefaultPrompt = s }
 	defPromptReset := makeReset(func() { defPromptEntry.SetText(def.DefaultPrompt) })
 
 	defNegEntry := NewTabbableEntry()
 	defNegEntry.SetText(state.Config.DefaultNegPrompt)
 	defNegEntry.Wrapping = fyne.TextWrapWord
+	defNegEntry.OnChanged = func(s string) { state.Config.DefaultNegPrompt = s }
 	defNegReset := makeReset(func() { defNegEntry.SetText(def.DefaultNegPrompt) })
 
 	encourageEdtEntry := NewTabbableEntry()
 	encourageEdtEntry.SetText(state.Config.EncourageEdt)
 	encourageEdtEntry.Wrapping = fyne.TextWrapWord
+	encourageEdtEntry.OnChanged = func(s string) { state.Config.EncourageEdt = s }
 	encEdtReset := makeReset(func() { encourageEdtEntry.SetText(def.EncourageEdt) })
 
 	encourageGenEntry := NewTabbableEntry()
 	encourageGenEntry.SetText(state.Config.EncourageGen)
 	encourageGenEntry.Wrapping = fyne.TextWrapWord
+	encourageGenEntry.OnChanged = func(s string) { state.Config.EncourageGen = s }
 	encGenReset := makeReset(func() { encourageGenEntry.SetText(def.EncourageGen) })
 
-	debugCheck := widget.NewCheck("Debug Mode", func(b bool) {})
+	debugCheck := widget.NewCheck("Debug Mode", func(b bool) { state.Config.Debug = b })
 	debugCheck.SetChecked(state.Config.Debug)
 	debugReset := makeReset(func() { debugCheck.SetChecked(def.Debug) })
 
@@ -90,6 +96,7 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 	tempSlider.Value = float64(state.Config.Temperature)
 	tempSlider.OnChanged = func(v float64) {
 		tempLabel.SetText(fmt.Sprintf("Temperature: %.1f", v))
+		state.Config.Temperature = float32(v)
 	}
 	tempReset := makeReset(func() { tempSlider.SetValue(float64(def.Temperature)) })
 
@@ -99,77 +106,72 @@ func makeSettingsTab(state *AppState) fyne.CanvasObject {
 	topPSlider.Value = float64(state.Config.TopP)
 	topPSlider.OnChanged = func(v float64) {
 		topPLabel.SetText(fmt.Sprintf("TopP: %.2f", v))
+		state.Config.TopP = float32(v)
 	}
 	topPReset := makeReset(func() { topPSlider.SetValue(float64(def.TopP)) })
 
 	topKEntry := widget.NewEntry()
 	topKEntry.SetText(strconv.Itoa(state.Config.TopK))
+	topKEntry.OnChanged = func(s string) {
+		if v, err := strconv.Atoi(s); err == nil {
+			state.Config.TopK = v
+		}
+	}
 	topKReset := makeReset(func() { topKEntry.SetText(strconv.Itoa(def.TopK)) })
 
 	maxTokensEntry := widget.NewEntry()
 	maxTokensEntry.SetText(strconv.Itoa(state.Config.MaxOutputTokens))
+	maxTokensEntry.OnChanged = func(s string) {
+		if v, err := strconv.Atoi(s); err == nil {
+			state.Config.MaxOutputTokens = v
+		}
+	}
 	maxTokensReset := makeReset(func() { maxTokensEntry.SetText(strconv.Itoa(def.MaxOutputTokens)) })
 
 	// Model Endpoints
 	nanoFlashEntry := widget.NewEntry()
 	nanoFlashEntry.SetText(state.Config.ModelNanoFlash)
+	nanoFlashEntry.OnChanged = func(s string) { state.Config.ModelNanoFlash = s }
 	nanoFlashReset := makeReset(func() { nanoFlashEntry.SetText(def.ModelNanoFlash) })
 
 	nanoProEntry := widget.NewEntry()
 	nanoProEntry.SetText(state.Config.ModelNanoPro)
+	nanoProEntry.OnChanged = func(s string) { state.Config.ModelNanoPro = s }
 	nanoProReset := makeReset(func() { nanoProEntry.SetText(def.ModelNanoPro) })
 
 	nano2Entry := widget.NewEntry()
 	nano2Entry.SetText(state.Config.ModelNano2)
+	nano2Entry.OnChanged = func(s string) { state.Config.ModelNano2 = s }
 	nano2Reset := makeReset(func() { nano2Entry.SetText(def.ModelNano2) })
 
 	imagenEntry := widget.NewEntry()
 	imagenEntry.SetText(state.Config.ModelImagen)
+	imagenEntry.OnChanged = func(s string) { state.Config.ModelImagen = s }
 	imagenReset := makeReset(func() { imagenEntry.SetText(def.ModelImagen) })
 
 	imagenUltraEntry := widget.NewEntry()
 	imagenUltraEntry.SetText(state.Config.ModelImagenUltra)
+	imagenUltraEntry.OnChanged = func(s string) { state.Config.ModelImagenUltra = s }
 	imagenUltraReset := makeReset(func() { imagenUltraEntry.SetText(def.ModelImagenUltra) })
 
 	// Safety Settings
 	thresholds := []string{"BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"}
 	safetySelects := make(map[string]*widget.Select)
 	for _, s := range state.Config.SafetySettings {
-		sel := widget.NewSelect(thresholds, func(string) {})
+		category := s.Category
+		sel := widget.NewSelect(thresholds, func(val string) {
+			for i, ss := range state.Config.SafetySettings {
+				if ss.Category == category {
+					state.Config.SafetySettings[i].Threshold = val
+					break
+				}
+			}
+		})
 		sel.SetSelected(s.Threshold)
-		safetySelects[s.Category] = sel
+		safetySelects[category] = sel
 	}
 
 	saveBtn := widget.NewButton("Save Configuration", func() {
-		state.Config.APIKey = apiKeyEntry.Text
-		state.Config.OutputDir = outputDirEntry.Text
-		state.Config.DefaultPrompt = defPromptEntry.Text
-		state.Config.DefaultNegPrompt = defNegEntry.Text
-		state.Config.EncourageEdt = encourageEdtEntry.Text
-		state.Config.EncourageGen = encourageGenEntry.Text
-		state.Config.Debug = debugCheck.Checked
-
-		state.Config.Temperature = float32(tempSlider.Value)
-		state.Config.TopP = float32(topPSlider.Value)
-		if tk, err := strconv.Atoi(topKEntry.Text); err == nil {
-			state.Config.TopK = tk
-		}
-		if mt, err := strconv.Atoi(maxTokensEntry.Text); err == nil {
-			state.Config.MaxOutputTokens = mt
-		}
-
-		state.Config.ModelNanoFlash = nanoFlashEntry.Text
-		state.Config.ModelNanoPro = nanoProEntry.Text
-		state.Config.ModelNano2 = nano2Entry.Text
-		state.Config.ModelImagen = imagenEntry.Text
-		state.Config.ModelImagenUltra = imagenUltraEntry.Text
-
-		for i, s := range state.Config.SafetySettings {
-			if sel, ok := safetySelects[s.Category]; ok {
-				state.Config.SafetySettings[i].Threshold = sel.Selected
-			}
-		}
-
 		err := SaveConfig(state.Config)
 		if err != nil {
 			state.Log("Error saving config: " + err.Error())

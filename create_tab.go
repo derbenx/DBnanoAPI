@@ -152,6 +152,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		rect.SetMinSize(fyne.NewSize(width, 0))
 		return container.NewStack(rect, obj)
 	}
+	// In place of the closure, use a real layout later if needed, but for now
+	// let's simplify the stack to reduce object count.
 
 	// Pre-declare components
 	var imageList *widget.List
@@ -859,7 +861,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		fixedWidth(widget.NewLabel("Tasks"), 50),
 		fixedWidth(widget.NewLabel("Image"), 400),
 	)
-	imageScroll := container.NewHScroll(container.NewBorder(imageHeaders, nil, nil, nil, imageList))
+	imageScroll := container.NewHScroll(container.NewBorder(imageHeaders, nil, nil, nil, container.NewVScroll(imageList)))
 	imageScroll.SetMinSize(fyne.NewSize(400, 0))
 
 	topHalf := container.NewHSplit(imageScroll, previewContainer)
@@ -873,7 +875,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		fixedWidth(widget.NewLabel("Cost"), 80),
 		fixedWidth(widget.NewLabel("Prompt"), 500),
 	)
-	taskScroll := container.NewHScroll(container.NewBorder(taskHeaders, nil, nil, nil, taskList))
+	taskScroll := container.NewHScroll(container.NewBorder(taskHeaders, nil, nil, nil, container.NewVScroll(taskList)))
 	taskScroll.SetMinSize(fyne.NewSize(400, 140))
 
 	leftBottom := container.NewBorder(nil, btnBox, nil, nil, taskScroll)

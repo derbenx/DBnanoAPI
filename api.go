@@ -541,6 +541,8 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 			s.Log("Batch " + job.JobID + " succeeded. Downloading results...")
 			return s.DownloadBatchResults(respFile)
 		}
+	} else if state == "FAILED" || state == "CANCELLED" || state == "EXPIRED" {
+		s.CleanupJobsFile()
 	}
 	return nil
 }

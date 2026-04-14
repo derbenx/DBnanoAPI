@@ -9,9 +9,8 @@ import (
 const sessionFileName = "session.json"
 
 type SessionData struct {
-	Images    []*ImageInfo `json:"images"`
-	Tasks     []*TaskInfo  `json:"tasks"`
-	BatchJobs []*BatchJob  `json:"batch_jobs"`
+	Images []*ImageInfo `json:"images"`
+	Tasks  []*TaskInfo  `json:"tasks"`
 }
 
 func GetSessionPath() string {
@@ -21,9 +20,8 @@ func GetSessionPath() string {
 
 func (s *AppState) SaveSession(path string) error {
 	data := SessionData{
-		Images:    s.Images,
-		Tasks:     s.Tasks,
-		BatchJobs: s.BatchJobs,
+		Images: s.Images,
+		Tasks:  s.Tasks,
 	}
 	bytes, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -46,6 +44,5 @@ func (s *AppState) LoadSession(path string) error {
 
 	s.Images = data.Images
 	s.Tasks = data.Tasks
-	s.BatchJobs = data.BatchJobs
 	return nil
 }

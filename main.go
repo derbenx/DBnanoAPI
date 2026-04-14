@@ -20,7 +20,8 @@ type AppState struct {
 	Images     []*ImageInfo
 	Tasks      []*TaskInfo
 	BatchJobs  []*BatchJob
-	ModelLog   *widget.Label
+	ModelLog   *widget.List
+	LogLines   []string
 	LogScroll  *container.Scroll
 	Window     fyne.Window
 
@@ -63,9 +64,19 @@ func main() {
 	}
 
 	// Shared Log
-	state.ModelLog = widget.NewLabel("To start, drag and drop an image or click 'New Image'...")
+	state.LogLines = []string{"To start, drag and drop an image or click 'New Image'..."}
+	state.ModelLog = widget.NewList(
+		func() int { return len(state.LogLines) },
+		func() fyne.CanvasObject {
+			l := widget.NewLabel("")
+			l.Wrapping = fyne.TextWrapBreak
+			return l
+		},
+		func(id widget.ListItemID, obj fyne.CanvasObject) {
+			obj.(*widget.Label).SetText(state.LogLines[id])
+		},
+	)
 	state.LoadJobs()
-	state.ModelLog.Wrapping = fyne.TextWrapBreak
 
 	// Tabs
 	createTab := state.makeCreateTab()
@@ -83,31 +94,35 @@ func main() {
 		// Update app state or just let the index handle it
 	}
 
-	logScroll := container.NewVScroll(state.ModelLog)
-	logScroll.SetMinSize(fyne.NewSize(0, 30))
-	state.LogScroll = logScroll
-
-	logSplit := container.NewVSplit(tabs, logScroll)
+	logSplit := container.NewVSplit(tabs, state.ModelLog)
 	logSplit.Offset = state.Config.LogSplitOffset
 	state.LogSplit = logSplit
 	w.SetContent(logSplit)
 
 	w.Resize(fyne.NewSize(state.Config.WindowWidth, state.Config.WindowHeight))
-	w.CenterOnScreen()
+	if state.Config.IsMaximized {
+		w.Maximize()
+	} else {
+		w.CenterOnScreen()
+	}
 
 	// Background Monitoring
 	go func() {
 		const interval = 2 * time.Minute
 		nextCheck := time.Now().Add(interval)
 		ticker := time.NewTicker(1 * time.Second)
+		lastJobsLen := -1
 		for range ticker.C {
-			if len(state.BatchJobs) == 0 {
-				if state.BatchProgressBar != nil {
+			jobsLen := len(state.BatchJobs)
+			if jobsLen == 0 {
+				if state.BatchProgressBar != nil && (lastJobsLen != 0) {
 					state.BatchProgressBar.SetValue(0)
 					state.BatchStatusLabel.SetText("No active batch jobs.")
+					lastJobsLen = 0
 				}
 				continue
 			}
+			lastJobsLen = jobsLen
 
 			remaining := time.Until(nextCheck)
 			if remaining <= 0 {
@@ -147,7 +162,10 @@ func main() {
 			if state.BatchProgressBar != nil {
 				elapsed := interval - remaining
 				state.BatchProgressBar.SetValue(float64(elapsed) / float64(interval))
-				state.BatchStatusLabel.SetText(fmt.Sprintf("Next status check in %d seconds...", int(remaining.Seconds())))
+				newStatus := fmt.Sprintf("Next status check in %d seconds...", int(remaining.Seconds()))
+				if state.BatchStatusLabel.Text != newStatus {
+					state.BatchStatusLabel.SetText(newStatus)
+				}
 			}
 		}
 	}()
@@ -185,9 +203,26 @@ func main() {
 
 	w.Canvas().SetOnTypedKey(func(k *fyne.KeyEvent) {
 
+		focused := w.Canvas().Focused()
+
+		// List Arrow Navigation
+		if k.Name == fyne.KeyUp || k.Name == fyne.KeyDown {
+			if list, ok := focused.(*widget.List); ok {
+				selected := list.Selected
+				if len(selected) > 0 {
+					current := selected[0]
+					if k.Name == fyne.KeyUp && current > 0 {
+						list.Select(current - 1)
+					} else if k.Name == fyne.KeyDown && current < list.Length()-1 {
+						list.Select(current + 1)
+					}
+					return
+				}
+			}
+		}
+
 		if k.Name == fyne.KeyDelete || k.Name == fyne.KeyBackspace {
 			// Don't delete items if user is typing in a text field
-			focused := w.Canvas().Focused()
 			if focused != nil {
 				_, isEntry := focused.(*widget.Entry)
 				_, isTabbable := focused.(*TabbableEntry)
@@ -204,21 +239,29 @@ func main() {
 
 	w.CenterOnScreen()
 
-	// Capture state on close
+	// Capture GUI state on close without overwriting business settings
 	w.SetOnClosed(func() {
-		state.Config.WindowWidth = w.Canvas().Size().Width
-		state.Config.WindowHeight = w.Canvas().Size().Height
-		state.Config.LogSplitOffset = state.LogSplit.Offset
+		diskCfg, err := LoadConfig()
+		if err != nil {
+			diskCfg = state.Config
+		}
+
+		diskCfg.IsMaximized = w.IsMaximized()
+		if !diskCfg.IsMaximized {
+			diskCfg.WindowWidth = w.Canvas().Size().Width
+			diskCfg.WindowHeight = w.Canvas().Size().Height
+		}
+		diskCfg.LogSplitOffset = state.LogSplit.Offset
 		if state.MainSplit != nil {
-			state.Config.SplitOffsetMain = state.MainSplit.Offset
+			diskCfg.SplitOffsetMain = state.MainSplit.Offset
 		}
 		if state.LeftSplit != nil {
-			state.Config.SplitOffsetLeft = state.LeftSplit.Offset
+			diskCfg.SplitOffsetLeft = state.LeftSplit.Offset
 		}
 		if state.TopSplit != nil {
-			state.Config.SplitOffsetTop = state.TopSplit.Offset
+			diskCfg.SplitOffsetTop = state.TopSplit.Offset
 		}
-		SaveConfig(state.Config)
+		SaveConfig(diskCfg)
 	})
 
 	w.ShowAndRun()
@@ -232,17 +275,16 @@ func makeHelpTab(state *AppState) fyne.CanvasObject {
 
 func (s *AppState) Log(msg string) {
 	timestamp := time.Now().Format("15:04:05")
+	entry := "[" + timestamp + "] " + msg
 
 	// UI Log
-	lines := strings.Split(s.ModelLog.Text, "\n")
-	if len(lines) > 300 {
-		lines = lines[len(lines)-300:]
+	s.LogLines = append(s.LogLines, entry)
+	if len(s.LogLines) > 300 {
+		s.LogLines = s.LogLines[len(s.LogLines)-300:]
 	}
-	newText := strings.Join(lines, "\n") + "\n[" + timestamp + "] " + msg
-	s.ModelLog.SetText(newText)
-
-	if s.LogScroll != nil {
-		s.LogScroll.ScrollToBottom()
+	if s.ModelLog != nil {
+		s.ModelLog.Refresh()
+		s.ModelLog.ScrollToBottom()
 	}
 
 	// Debug.log file
