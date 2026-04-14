@@ -478,7 +478,21 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 		if task != nil {
 			if task.ImgIDs != sourceIDsEntry.Text {
-				// Validate and filter IDs
+				// 1. Decrement current image task counts
+				oldIDs := strings.Split(task.ImgIDs, "+")
+				for _, id := range oldIDs {
+					id = strings.TrimSpace(id)
+					for _, img := range s.Images {
+						if img.ID == id {
+							if img.TaskCount > 0 {
+								img.TaskCount--
+							}
+							break
+						}
+					}
+				}
+
+				// 2. Validate and filter new IDs, then increment their task counts
 				var validIDs []string
 				var newPaths []string
 				ids := strings.Split(sourceIDsEntry.Text, "+")
@@ -491,6 +505,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 						if img.ID == id {
 							validIDs = append(validIDs, id)
 							newPaths = append(newPaths, img.FullPath)
+							img.TaskCount++
 							break
 						}
 					}
@@ -502,6 +517,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				if task.ImgIDs != sourceIDsEntry.Text {
 					sourceIDsEntry.SetText(task.ImgIDs)
 				}
+				imageList.Refresh()
 			}
 			task.Prompt = promptEntry.Text
 			task.NegativePrompt = negPromptEntry.Text
@@ -907,9 +923,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 				ids := strings.Split(deletedTask.ImgIDs, "+")
 				for _, id := range ids {
+					id = strings.TrimSpace(id)
 					for _, img := range s.Images {
 						if img.ID == id {
-							img.TaskCount--
+							if img.TaskCount > 0 {
+								img.TaskCount--
+							}
 							break
 						}
 					}

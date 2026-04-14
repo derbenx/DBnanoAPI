@@ -474,7 +474,11 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 	// Normalize status
 	status := res.State
 	if status == "" {
-		status = "UNKNOWN"
+		if job.Status == "" {
+			status = "UNKNOWN"
+		} else {
+			status = job.Status // Keep current if empty from API
+		}
 	}
 	if strings.HasPrefix(status, "BATCH_STATE_") {
 		status = status[len("BATCH_STATE_"):]

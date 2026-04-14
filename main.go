@@ -36,6 +36,8 @@ type AppState struct {
 	OnTasksUpdated  func()
 	GlobalMode      string
 
+	BatchMonitorIndex int
+
 	MainSplit *container.Split
 	LeftSplit *container.Split
 	TopSplit  *container.Split
@@ -109,19 +111,35 @@ func main() {
 
 			remaining := time.Until(nextCheck)
 			if remaining <= 0 {
-				state.Log("Checking batch statuses...")
+				// 1. Identify active jobs
+				var activeJobs []*BatchJob
 				for _, job := range state.BatchJobs {
-					if job.Status == "SUCCEEDED" || job.Status == "FAILED" || job.Status == "CANCELLED" || job.Status == "EXPIRED" {
-						continue
+					s := job.Status
+					if s != "SUCCEEDED" && s != "FAILED" && s != "CANCELLED" && s != "EXPIRED" && s != "Success" && s != "Failed" {
+						activeJobs = append(activeJobs, job)
 					}
-					err := state.CheckBatchStatus(job)
+				}
+
+				if len(activeJobs) > 0 {
+					// 2. Cycle to the next job
+					if state.BatchMonitorIndex >= len(activeJobs) {
+						state.BatchMonitorIndex = 0
+					}
+					target := activeJobs[state.BatchMonitorIndex]
+					state.BatchMonitorIndex++
+
+					// 3. Check only that one job
+					state.Log(fmt.Sprintf("Checking status for job: %s", target.JobID))
+					err := state.CheckBatchStatus(target)
 					if err != nil {
 						state.Log("Status check error: " + err.Error())
 					}
+
+					if state.BatchList != nil {
+						state.BatchList.Refresh()
+					}
 				}
-				if state.BatchList != nil {
-					state.BatchList.Refresh()
-				}
+
 				nextCheck = time.Now().Add(interval)
 				remaining = interval
 			}
