@@ -499,7 +499,6 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	updateTaskFromUI := func() {
 		s.Mu.Lock()
-		defer s.Mu.Unlock()
 		var task *TaskInfo
 		if selectedTaskID != -1 {
 			for _, t := range s.Tasks {
@@ -551,7 +550,9 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				if task.ImgIDs != sourceIDsEntry.Text {
 					sourceIDsEntry.SetText(task.ImgIDs)
 				}
+				s.Mu.Unlock()
 				imageList.Refresh()
+				s.Mu.Lock()
 			}
 			task.Prompt = promptEntry.Text
 			task.NegativePrompt = negPromptEntry.Text
@@ -570,10 +571,13 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			costLabel.SetText(fmt.Sprintf("$%.4f", task.Cost))
 			updateRatioOverlay(task.Ratio)
 
+			s.Mu.Unlock()
 			taskList.Refresh()
 			if s.OnTasksUpdated != nil {
 				s.OnTasksUpdated()
 			}
+		} else {
+			s.Mu.Unlock()
 		}
 	}
 
@@ -608,10 +612,12 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	modeSelect = widget.NewRadioGroup([]string{"Immediate", "Batch"}, func(m string) {
 		s.Mu.Lock()
 		s.GlobalMode = m
+		s.Mu.Unlock()
 		s.Log("Mode switched to: " + m)
 
 		updateRunBtnLabel()
 
+		s.Mu.Lock()
 		for _, t := range s.Tasks {
 			t.Cost = s.CalculateCost(t.Agent, t.Size)
 		}
@@ -967,7 +973,6 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 	s.DeleteHandler = func() {
 		s.Mu.Lock()
-		defer s.Mu.Unlock()
 		if selectedTaskID != -1 {
 			var idx = -1
 			for i, t := range s.Tasks {
@@ -995,6 +1000,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 
 				selectedTaskID = -1
 				clearEditor()
+				s.Mu.Unlock()
 				taskList.Refresh()
 				imageList.Refresh()
 				if s.OnTasksUpdated != nil {
@@ -1002,9 +1008,13 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				}
 				s.Log("Task deleted.")
 
+				s.Mu.Lock()
 				if len(s.Tasks) == 0 {
 					s.NextTaskID = 1
 				}
+				s.Mu.Unlock()
+			} else {
+				s.Mu.Unlock()
 			}
 			return
 		}
@@ -1029,6 +1039,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				s.Tasks = newTasks
 
 				selectedImgID = ""
+				s.Mu.Unlock()
 				imageList.Refresh()
 				taskList.Refresh()
 				if s.OnTasksUpdated != nil {
@@ -1036,6 +1047,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 				}
 				s.Log("Image deleted.")
 
+				s.Mu.RLock()
 				// Auto-select next best image
 				if len(s.Images) > 0 {
 					newIdx := idx
@@ -1044,6 +1056,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					}
 					// Explicitly update preview for the new selection
 					img := s.Images[newIdx]
+					s.Mu.RUnlock()
 					if img.FullPath != "<GENERATE>" {
 						preview.File = img.FullPath
 					} else {
@@ -1052,13 +1065,20 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					preview.Refresh()
 					imageList.Select(newIdx)
 				} else {
+					s.Mu.RUnlock()
 					// Clear preview if no images left
 					preview.File = ""
 					preview.Refresh()
 					// Reset counters if empty
+					s.Mu.Lock()
 					s.NextImageID = 1
+					s.Mu.Unlock()
 				}
+			} else {
+				s.Mu.Unlock()
 			}
+		} else {
+			s.Mu.Unlock()
 		}
 	}
 

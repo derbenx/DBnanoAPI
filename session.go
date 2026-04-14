@@ -27,7 +27,12 @@ func (s *AppState) SaveSession(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, bytes, 0644)
+
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, bytes, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 func (s *AppState) LoadSession(path string) error {

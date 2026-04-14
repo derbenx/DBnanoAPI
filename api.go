@@ -120,6 +120,11 @@ func (s *AppState) CalculateCost(agent, size string) float64 {
 }
 
 func (s *AppState) RunTask(task *TaskInfo) error {
+	// Validate Prompt
+	if strings.TrimSpace(task.Prompt) == "" {
+		return fmt.Errorf("task prompt is empty")
+	}
+
 	// Check file existence
 	if task.SourcePath != "" && task.SourcePath != "<GENERATE>" {
 		paths := strings.Split(task.SourcePath, "|")
@@ -168,6 +173,13 @@ func (s *AppState) RunTask(task *TaskInfo) error {
 func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	if len(tasks) == 0 {
 		return nil
+	}
+
+	// Validate Prompts and file existence for all tasks
+	for _, t := range tasks {
+		if strings.TrimSpace(t.Prompt) == "" {
+			return fmt.Errorf("task %d prompt is empty", t.ID)
+		}
 	}
 
 	// Check file existence for all tasks
@@ -238,9 +250,20 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	}
 
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchGenerateContent?key=%s", modelID, s.Config.APIKey)
-	submitReq := fmt.Sprintf(`{"batch": {"input_config": {"file_name": "%s"}}}`, resourceName)
 
-	resp, err := s.HTTPClient.Post(url, "application/json", strings.NewReader(submitReq))
+	type BatchSubmitReq struct {
+		Batch struct {
+			InputConfig struct {
+				FileName string `json:"file_name"`
+			} `json:"input_config"`
+		} `json:"batch"`
+	}
+
+	var submitReq BatchSubmitReq
+	submitReq.Batch.InputConfig.FileName = resourceName
+	reqBody, _ := json.Marshal(submitReq)
+
+	resp, err := s.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return err
 	}

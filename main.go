@@ -115,7 +115,6 @@ func main() {
 	w.SetContent(logSplit)
 
 	w.Resize(fyne.NewSize(state.Config.WindowWidth, state.Config.WindowHeight))
-	w.CenterOnScreen()
 
 	// Background Monitoring
 	go func() {

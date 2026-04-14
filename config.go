@@ -50,6 +50,19 @@ func LoadConfig() (*Config, error) {
 		cfg.ModelImagenUltra = def.ModelImagenUltra
 	}
 
+	if cfg.WindowWidth <= 100 {
+		cfg.WindowWidth = def.WindowWidth
+	}
+	if cfg.WindowHeight <= 100 {
+		cfg.WindowHeight = def.WindowHeight
+	}
+	if cfg.LogSplitOffset <= 0 || cfg.LogSplitOffset >= 1 {
+		cfg.LogSplitOffset = def.LogSplitOffset
+	}
+	if cfg.SplitOffsetMain <= 0 || cfg.SplitOffsetMain >= 1 {
+		cfg.SplitOffsetMain = def.SplitOffsetMain
+	}
+
 	return &cfg, nil
 }
 
