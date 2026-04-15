@@ -143,15 +143,42 @@ func (r *ratioOverlayLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
 	return objects[0].MinSize()
 }
 
+type colLayout struct {
+	widths []float32
+}
+
+func (c *colLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	x := float32(0)
+	for i, obj := range objects {
+		w := size.Width - x
+		if i < len(c.widths) {
+			w = c.widths[i]
+		}
+		obj.Resize(fyne.NewSize(w, size.Height))
+		obj.Move(fyne.NewPos(x, 0))
+		x += w
+	}
+}
+
+func (c *colLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	var w float32
+	var h float32
+	for i, obj := range objects {
+		if i < len(c.widths) {
+			w += c.widths[i]
+		} else {
+			w += obj.MinSize().Width
+		}
+		if obj.MinSize().Height > h {
+			h = obj.MinSize().Height
+		}
+	}
+	return fyne.NewSize(w, h)
+}
+
 func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	var selectedImgID string
 	var selectedTaskID int = -1
-
-	fixedWidth := func(obj fyne.CanvasObject, width float32) fyne.CanvasObject {
-		rect := canvas.NewRectangle(color.Transparent)
-		rect.SetMinSize(fyne.NewSize(width, 0))
-		return container.NewStack(rect, obj)
-	}
 	// In place of the closure, use a real layout later if needed, but for now
 	// let's simplify the stack to reduce object count.
 
@@ -224,12 +251,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			name := widget.NewLabel("")
 			name.Truncation = fyne.TextTruncateEllipsis
 
-			content := container.NewHBox(
-				fixedWidth(check, 30),
-				fixedWidth(id, 30),
-				fixedWidth(size, 60),
-				fixedWidth(tasks, 50),
-				fixedWidth(name, 400),
+			content := container.New(&colLayout{widths: []float32{30, 30, 60, 50, 400}},
+				check, id, size, tasks, name,
 			)
 			return newTappableListItem(content, 0, nil, nil)
 		},
@@ -244,19 +267,20 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			img := s.Images[id]
 
 			hbox := item.content.(*fyne.Container)
-			check := hbox.Objects[0].(*fyne.Container).Objects[1].(*widget.Check)
+			check := hbox.Objects[0].(*widget.Check)
 			check.Checked = img.Selected
 			check.OnChanged = func(b bool) {
 				img.Selected = b
 			}
 
-			hbox.Objects[1].(*fyne.Container).Objects[1].(*widget.Label).SetText(img.ID)
-			hbox.Objects[2].(*fyne.Container).Objects[1].(*widget.Label).SetText(fmt.Sprintf("%.2f", img.SizeMB))
-			hbox.Objects[3].(*fyne.Container).Objects[1].(*widget.Label).SetText(fmt.Sprintf("%d", img.TaskCount))
-			hbox.Objects[4].(*fyne.Container).Objects[1].(*widget.Label).SetText(img.FileName)
+			hbox.Objects[1].(*widget.Label).SetText(img.ID)
+			hbox.Objects[2].(*widget.Label).SetText(fmt.Sprintf("%.2f", img.SizeMB))
+			hbox.Objects[3].(*widget.Label).SetText(fmt.Sprintf("%d", img.TaskCount))
+			hbox.Objects[4].(*widget.Label).SetText(img.FileName)
 
 			item.onTapped = func(id widget.ListItemID) {
 				imageList.Select(id)
+				s.Window.Canvas().Focus(imageList)
 			}
 			item.onRightClick = func(id widget.ListItemID, pos fyne.Position) {
 				menu := fyne.NewMenu("",
@@ -293,6 +317,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 						fd.Show()
 					}),
 					fyne.NewMenuItem("Delete", func() {
+						selectedTaskID = -1
 						selectedImgID = s.Images[id].ID
 						s.DeleteHandler()
 					}),
@@ -313,6 +338,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		selectedImgID = img.ID
 		selectedTaskID = -1
 		taskList.UnselectAll()
+		s.Window.Canvas().Focus(imageList)
 
 		if img.FullPath != "<GENERATE>" {
 			preview.File = img.FullPath
@@ -333,17 +359,14 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		func() fyne.CanvasObject {
 			id := widget.NewLabel("")
 			agent := widget.NewLabel("")
+			ratio := widget.NewLabel("")
 			status := widget.NewLabel("")
 			cost := widget.NewLabel("")
 			prompt := widget.NewLabel("")
 			prompt.Truncation = fyne.TextTruncateEllipsis
 
-			content := container.NewHBox(
-				fixedWidth(id, 60),
-				fixedWidth(agent, 120),
-				fixedWidth(status, 100),
-				fixedWidth(cost, 80),
-				fixedWidth(prompt, 500),
+			content := container.New(&colLayout{widths: []float32{60, 120, 60, 100, 80, 500}},
+				id, agent, ratio, status, cost, prompt,
 			)
 			return newTappableListItem(content, 0, nil, nil)
 		},
@@ -358,18 +381,20 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			task := s.Tasks[id]
 
 			hbox := item.content.(*fyne.Container)
-			hbox.Objects[0].(*fyne.Container).Objects[1].(*widget.Label).SetText(task.ImgIDs)
-			hbox.Objects[1].(*fyne.Container).Objects[1].(*widget.Label).SetText(task.Agent + " " + task.Size)
+			hbox.Objects[0].(*widget.Label).SetText(task.ImgIDs)
+			hbox.Objects[1].(*widget.Label).SetText(task.Agent + " " + task.Size)
+			hbox.Objects[2].(*widget.Label).SetText(task.Ratio)
 			stat := task.Status
 			if task.Disabled {
 				stat += " (Off)"
 			}
-			hbox.Objects[2].(*fyne.Container).Objects[1].(*widget.Label).SetText(stat)
-			hbox.Objects[3].(*fyne.Container).Objects[1].(*widget.Label).SetText(fmt.Sprintf("$%.4f", task.Cost))
-			hbox.Objects[4].(*fyne.Container).Objects[1].(*widget.Label).SetText(task.Prompt)
+			hbox.Objects[3].(*widget.Label).SetText(stat)
+			hbox.Objects[4].(*widget.Label).SetText(fmt.Sprintf("$%.4f", task.Cost))
+			hbox.Objects[5].(*widget.Label).SetText(task.Prompt)
 
 			item.onTapped = func(id widget.ListItemID) {
 				taskList.Select(id)
+				s.Window.Canvas().Focus(taskList)
 			}
 			item.onRightClick = func(id widget.ListItemID, pos fyne.Position) {
 				toggleText := "Disable"
@@ -393,6 +418,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 						}
 					}),
 					fyne.NewMenuItem("Delete", func() {
+						selectedImgID = ""
 						selectedTaskID = task.ID
 						s.DeleteHandler()
 					}),
@@ -441,6 +467,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		selectedTaskID = task.ID
 		selectedImgID = ""
 		imageList.UnselectAll()
+		s.Window.Canvas().Focus(taskList)
 
 		// Block OnChanged listeners
 		oldP := promptEntry.OnChanged
@@ -826,14 +853,13 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	saveBtn := widget.NewButton("Save Session", func() {
 		fd := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
 			if err == nil && writer != nil {
-				p := writer.URI().Path()
-				err = s.SaveSession(p)
+				defer writer.Close()
+				err = s.SaveSession(writer)
 				if err != nil {
 					s.Log("Save failed: " + err.Error())
 				} else {
-					s.Log("Session saved to: " + p)
+					s.Log("Session saved to: " + writer.URI().String())
 				}
-				writer.Close()
 			}
 		}, s.Window)
 
@@ -850,8 +876,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	loadBtn := widget.NewButton("Load Session", func() {
 		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
 			if err == nil && reader != nil {
-				p := reader.URI().Path()
-				err = s.LoadSession(p)
+				defer reader.Close()
+				err = s.LoadSession(reader)
 				if err != nil {
 					s.Log("Load failed: " + err.Error())
 				} else {
@@ -879,7 +905,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					if s.OnTasksUpdated != nil {
 						s.OnTasksUpdated()
 					}
-					s.Log("Session loaded from: " + p)
+					s.Log("Session loaded from: " + reader.URI().String())
 				}
 			}
 		}, s.Window)
@@ -913,28 +939,29 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		),
 	)
 
-	imageHeaders := container.NewHBox(
-		fixedWidth(widget.NewLabel("Sel"), 30),
-		fixedWidth(widget.NewLabel("#"), 30),
-		fixedWidth(widget.NewLabel("MBs"), 60),
-		fixedWidth(widget.NewLabel("Tasks"), 50),
-		fixedWidth(widget.NewLabel("Image"), 400),
+	imageHeaders := container.New(&colLayout{widths: []float32{30, 30, 60, 50, 400}},
+		widget.NewLabel("Sel"),
+		widget.NewLabel("#"),
+		widget.NewLabel("MBs"),
+		widget.NewLabel("Tasks"),
+		widget.NewLabel("Image"),
 	)
-	imageScroll := container.NewHScroll(container.NewBorder(imageHeaders, nil, nil, nil, container.NewVScroll(imageList)))
+	imageScroll := container.NewHScroll(container.NewBorder(imageHeaders, nil, nil, nil, imageList))
 	imageScroll.SetMinSize(fyne.NewSize(400, 0))
 
 	topHalf := container.NewHSplit(imageScroll, previewContainer)
 	topHalf.Offset = s.Config.SplitOffsetTop
 	s.TopSplit = topHalf
 
-	taskHeaders := container.NewHBox(
-		fixedWidth(widget.NewLabel("Img"), 60),
-		fixedWidth(widget.NewLabel("Tier"), 120),
-		fixedWidth(widget.NewLabel("Status"), 100),
-		fixedWidth(widget.NewLabel("Cost"), 80),
-		fixedWidth(widget.NewLabel("Prompt"), 500),
+	taskHeaders := container.New(&colLayout{widths: []float32{60, 120, 60, 100, 80, 500}},
+		widget.NewLabel("Img"),
+		widget.NewLabel("Tier"),
+		widget.NewLabel("Ratio"),
+		widget.NewLabel("Status"),
+		widget.NewLabel("Cost"),
+		widget.NewLabel("Prompt"),
 	)
-	taskScroll := container.NewHScroll(container.NewBorder(taskHeaders, nil, nil, nil, container.NewVScroll(taskList)))
+	taskScroll := container.NewHScroll(container.NewBorder(taskHeaders, nil, nil, nil, taskList))
 	taskScroll.SetMinSize(fyne.NewSize(400, 140))
 
 	leftBottom := container.NewBorder(nil, btnBox, nil, nil, taskScroll)
@@ -956,6 +983,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 			}
 			preview.Refresh()
 			imageList.Select(lastIdx)
+		} else {
+			preview.File = ""
+			preview.Resource = nil
+			preview.Refresh()
 		}
 	}
 
@@ -1068,6 +1099,7 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					s.Mu.RUnlock()
 					// Clear preview if no images left
 					preview.File = ""
+					preview.Resource = nil
 					preview.Refresh()
 					// Reset counters if empty
 					s.Mu.Lock()

@@ -2,23 +2,15 @@ package main
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
+	"io"
 )
-
-const sessionFileName = "session.json"
 
 type SessionData struct {
 	Images []*ImageInfo `json:"images"`
 	Tasks  []*TaskInfo  `json:"tasks"`
 }
 
-func GetSessionPath() string {
-	execPath, _ := os.Executable()
-	return filepath.Join(filepath.Dir(execPath), sessionFileName)
-}
-
-func (s *AppState) SaveSession(path string) error {
+func (s *AppState) SaveSession(w io.Writer) error {
 	data := SessionData{
 		Images: s.Images,
 		Tasks:  s.Tasks,
@@ -28,15 +20,12 @@ func (s *AppState) SaveSession(path string) error {
 		return err
 	}
 
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, bytes, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmpPath, path)
+	_, err = w.Write(bytes)
+	return err
 }
 
-func (s *AppState) LoadSession(path string) error {
-	bytes, err := os.ReadFile(path)
+func (s *AppState) LoadSession(r io.Reader) error {
+	bytes, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
