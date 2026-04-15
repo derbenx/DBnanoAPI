@@ -45,3 +45,10 @@ func NewRightClickTable(length func() (int, int), create func(*widget.Table) fyn
 	t.UpdateCell = update
 	return &RightClickTable{Table: t}
 }
+
+func (t *RightClickTable) UnselectAll() {
+	// Table doesn't have a simple UnselectAll, so we have to clear all selected cells
+	for _, id := range t.Selected {
+		t.Unselect(id)
+	}
+}

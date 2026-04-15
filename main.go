@@ -50,6 +50,7 @@ type AppState struct {
 }
 
 func main() {
+	os.Setenv("FYNE_SCROLLBAR_FADE", "0")
 	a := app.NewWithID("com.nanogo.editor")
 	w := a.NewWindow("Gemini 2026 Pro Editor (NanoGo)")
 
