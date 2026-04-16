@@ -20,7 +20,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -152,8 +151,8 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 	// let's simplify the stack to reduce object count.
 
 	// Pre-declare components
-	var imageTable *widget.Table
-	var taskTable *widget.Table
+	var imageTable *RightClickTable
+	var taskTable *RightClickTable
 	var preview *canvas.Image
 	var promptEntry *TabbableEntry
 	var negPromptEntry *TabbableEntry

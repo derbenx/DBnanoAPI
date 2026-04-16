@@ -24,7 +24,6 @@ func (l *RightClickLabel) Tapped(pe *fyne.PointEvent) {
 	if l.id.Row == 0 {
 		return
 	}
-	// Pass click to table for selection logic
 	l.table.Select(l.id)
 }
 
@@ -36,6 +35,8 @@ func (l *RightClickLabel) TappedSecondary(pe *fyne.PointEvent) {
 
 type RightClickTable struct {
 	*widget.Table
+	selectedID widget.TableCellID
+	OnSelected func(widget.TableCellID)
 }
 
 func NewRightClickTable(length func() (int, int), create func(*widget.Table) fyne.CanvasObject, update func(widget.TableCellID, fyne.CanvasObject)) *RightClickTable {
@@ -43,12 +44,22 @@ func NewRightClickTable(length func() (int, int), create func(*widget.Table) fyn
 	t.Length = length
 	t.CreateCell = func() fyne.CanvasObject { return create(t) }
 	t.UpdateCell = update
-	return &RightClickTable{Table: t}
+
+	rt := &RightClickTable{Table: t, selectedID: widget.TableCellID{Row: -1, Col: -1}}
+
+	t.OnSelected = func(id widget.TableCellID) {
+		rt.selectedID = id
+		if rt.OnSelected != nil {
+			rt.OnSelected(id)
+		}
+	}
+
+	return rt
 }
 
 func (t *RightClickTable) UnselectAll() {
-	// Table doesn't have a simple UnselectAll, so we have to clear all selected cells
-	for _, id := range t.Selected {
-		t.Unselect(id)
+	if t.selectedID.Row != -1 {
+		t.Table.Unselect(t.selectedID)
+		t.selectedID = widget.TableCellID{Row: -1, Col: -1}
 	}
 }
