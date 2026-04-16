@@ -67,23 +67,23 @@ type ImageConfig struct {
 	ImageSize   string `json:"imageSize,omitempty"`
 }
 
-func (s *AppState) GetModelID(agent string) string {
+func (a *App) GetModelID(agent string) string {
 	switch agent {
 	case "Nano Flash":
-		return s.Config.ModelNanoFlash
+		return a.Config.ModelNanoFlash
 	case "Nano Pro":
-		return s.Config.ModelNanoPro
+		return a.Config.ModelNanoPro
 	case "Nano 2":
-		return s.Config.ModelNano2
+		return a.Config.ModelNano2
 	case "Imagen":
-		return s.Config.ModelImagen
+		return a.Config.ModelImagen
 	case "Imagen Ultra":
-		return s.Config.ModelImagenUltra
+		return a.Config.ModelImagenUltra
 	}
 	return agent // Fallback to raw if not matched
 }
 
-func (s *AppState) CalculateCost(agent, size string) float64 {
+func (a *App) CalculateCost(agent, size string) float64 {
 	full := agent + " " + size
 	base := 0.134 // pro 1K & pro 2k
 	nano := true
@@ -113,13 +113,13 @@ func (s *AppState) CalculateCost(agent, size string) float64 {
 	}
 
 	// Apply 50% discount if Batch Mode is selected
-	if s.GlobalMode == "Batch" && nano {
+	if a.GlobalMode == "Batch" && nano {
 		return base * 0.5
 	}
 	return base
 }
 
-func (s *AppState) RunTask(task *TaskInfo) error {
+func (a *App) RunTask(task *TaskInfo) error {
 	// Validate Prompt
 	if strings.TrimSpace(task.Prompt) == "" {
 		return fmt.Errorf("task prompt is empty")
@@ -135,27 +135,27 @@ func (s *AppState) RunTask(task *TaskInfo) error {
 		}
 	}
 
-	task.Cost = s.CalculateCost(task.Agent, task.Size)
+	task.Cost = a.CalculateCost(task.Agent, task.Size)
 
-	modelID := s.GetModelID(task.Agent)
+	modelID := a.GetModelID(task.Agent)
 
 	var url string
 	var reqBody []byte
 	var err error
 
 	if strings.Contains(task.Agent, "Imagen") {
-		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:predict?key=%s", modelID, s.Config.APIKey)
-		reqBody, err = s.BuildImagenPayload(task)
+		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:predict?key=%s", modelID, a.Config.APIKey)
+		reqBody, err = a.BuildImagenPayload(task)
 	} else {
-		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", modelID, s.Config.APIKey)
-		reqBody, err = s.BuildPayload(task)
+		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", modelID, a.Config.APIKey)
+		reqBody, err = a.BuildPayload(task)
 	}
 
 	if err != nil {
 		return err
 	}
 
-	resp, err := s.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
+	resp, err := a.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return err
 	}
@@ -164,13 +164,13 @@ func (s *AppState) RunTask(task *TaskInfo) error {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		return s.HandleError(body, resp.StatusCode)
+		return a.HandleError(body, resp.StatusCode)
 	}
 
-	return s.ProcessResponse(body, task)
+	return a.ProcessResponse(body, task)
 }
 
-func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
+func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -195,15 +195,15 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	}
 
 	modelName := tasks[0].Agent
-	modelID := s.GetModelID(modelName)
+	modelID := a.GetModelID(modelName)
 
 	// 1. Create JSONL data
 	var buf bytes.Buffer
 	for i, t := range tasks {
 		// Build the standard payload
-		req, err := s.BuildGeminiRequest(t)
+		req, err := a.BuildGeminiRequest(t)
 		if err != nil {
-			s.Log(fmt.Sprintf("Skipping task %d in batch: %v", t.ID, err))
+			a.Log(fmt.Sprintf("Skipping task %d in batch: %v", t.ID, err))
 			continue
 		}
 
@@ -237,7 +237,7 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	}
 
 	// 2. Upload JSONL to Google Files API
-	fileURI, err := s.UploadFile(buf.Bytes())
+	fileURI, err := a.UploadFile(buf.Bytes())
 	if err != nil {
 		return fmt.Errorf("upload failed: %v", err)
 	}
@@ -249,7 +249,7 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 		resourceName = "files/" + parts[len(parts)-1]
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchGenerateContent?key=%s", modelID, s.Config.APIKey)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchGenerateContent?key=%s", modelID, a.Config.APIKey)
 
 	type BatchSubmitReq struct {
 		Batch struct {
@@ -263,7 +263,7 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	submitReq.Batch.InputConfig.FileName = resourceName
 	reqBody, _ := json.Marshal(submitReq)
 
-	resp, err := s.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
+	resp, err := a.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return err
 	}
@@ -271,7 +271,7 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		return s.HandleError(body, resp.StatusCode)
+		return a.HandleError(body, resp.StatusCode)
 	}
 
 	var res struct {
@@ -281,16 +281,16 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 		return err
 	}
 
-	s.Mu.Lock()
-	s.BatchJobs = append(s.BatchJobs, &BatchJob{
+	a.Mu.Lock()
+	a.BatchJobs = append(a.BatchJobs, &BatchJob{
 		JobID:       res.Name,
 		Status:      "Submitted",
 		SubmittedAt: time.Now(),
 		Progress:    "0%",
 	})
-	s.Mu.Unlock()
+	a.Mu.Unlock()
 
-	s.Log("Batch Job Submitted: " + res.Name)
+	a.Log("Batch Job Submitted: " + res.Name)
 
 	// Persist to jobs.txt
 	f, err := os.OpenFile("jobs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -302,8 +302,8 @@ func (s *AppState) SubmitBatchJob(tasks []*TaskInfo) error {
 	return nil
 }
 
-func (s *AppState) UploadFile(data []byte) (string, error) {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/upload/v1beta/files?key=%s", s.Config.APIKey)
+func (a *App) UploadFile(data []byte) (string, error) {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/upload/v1beta/files?key=%s", a.Config.APIKey)
 
 	boundary := "NanoGoBoundary" + fmt.Sprint(time.Now().Unix())
 	body := &bytes.Buffer{}
@@ -329,7 +329,7 @@ func (s *AppState) UploadFile(data []byte) (string, error) {
 	req.Header.Set("X-Goog-Upload-Protocol", "multipart")
 	req.Header.Set("Content-Type", "multipart/related; boundary="+boundary)
 
-	resp, err := s.HTTPClient.Do(req)
+	resp, err := a.HTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -349,7 +349,7 @@ func (s *AppState) UploadFile(data []byte) (string, error) {
 	return res.File.URI, nil
 }
 
-func (s *AppState) BuildImagenPayload(task *TaskInfo) ([]byte, error) {
+func (a *App) BuildImagenPayload(task *TaskInfo) ([]byte, error) {
 	req := ImagenRequest{
 		Instances: []ImagenInstance{{Prompt: task.Prompt}},
 		Parameters: ImagenParameters{
@@ -379,13 +379,13 @@ func getMimeType(path string) string {
 	}
 }
 
-func (s *AppState) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
+func (a *App) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
 	fullPrompt := fmt.Sprintf("USER DIRECTIVE: %s. Aspect Ratio: %s. Avoid: %s", task.Prompt, task.Ratio, task.NegativePrompt)
 	parts := []Part{{Text: fullPrompt}}
-	encourage := s.Config.EncourageGen
+	encourage := a.Config.EncourageGen
 
 	if task.SourcePath != "" && task.SourcePath != "<GENERATE>" {
-		encourage = s.Config.EncourageEdt
+		encourage = a.Config.EncourageEdt
 		paths := strings.Split(task.SourcePath, "|")
 		for _, p := range paths {
 			data, err := os.ReadFile(p)
@@ -407,14 +407,14 @@ func (s *AppState) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
 		SystemInstruction: &Content{Parts: []Part{{
 			Text: encourage,
 		}}},
-		SafetySettings: s.Config.SafetySettings,
+		SafetySettings: a.Config.SafetySettings,
 		GenerationConfig: &GenerationConfig{
 			CandidateCount:     1,
 			ResponseModalities: []string{"IMAGE"},
-			Temperature:        s.Config.Temperature,
-			TopP:               s.Config.TopP,
-			TopK:               s.Config.TopK,
-			MaxOutputTokens:    s.Config.MaxOutputTokens,
+			Temperature:        a.Config.Temperature,
+			TopP:               a.Config.TopP,
+			TopK:               a.Config.TopK,
+			MaxOutputTokens:    a.Config.MaxOutputTokens,
 			ImageConfig: &ImageConfig{
 				AspectRatio: task.Ratio,
 				ImageSize:   task.Size,
@@ -425,15 +425,15 @@ func (s *AppState) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
 	return req, nil
 }
 
-func (s *AppState) BuildPayload(task *TaskInfo) ([]byte, error) {
-	req, err := s.BuildGeminiRequest(task)
+func (a *App) BuildPayload(task *TaskInfo) ([]byte, error) {
+	req, err := a.BuildGeminiRequest(task)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(req)
 }
 
-func (s *AppState) HandleError(body []byte, status int) error {
+func (a *App) HandleError(body []byte, status int) error {
 	// Ported InspectApiResponse logic
 	bodyStr := string(body)
 	if strings.Contains(bodyStr, "<html") {
@@ -469,9 +469,9 @@ func (s *AppState) HandleError(body []byte, status int) error {
 	return fmt.Errorf("HTTP Error %d: %s", status, bodyStr)
 }
 
-func (s *AppState) TestAPI() error {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", s.Config.APIKey)
-	resp, err := s.HTTPClient.Get(url)
+func (a *App) TestAPI() error {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", a.Config.APIKey)
+	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
 		return err
 	}
@@ -479,7 +479,7 @@ func (s *AppState) TestAPI() error {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		return s.HandleError(body, resp.StatusCode)
+		return a.HandleError(body, resp.StatusCode)
 	}
 
 	var modelsResp struct {
@@ -491,7 +491,7 @@ func (s *AppState) TestAPI() error {
 		return err
 	}
 
-	s.Log(fmt.Sprintf("Connection successful. Found %d models.", len(modelsResp.Models)))
+	a.Log(fmt.Sprintf("Connection successful. Found %d models.", len(modelsResp.Models)))
 
 	// Log first 10 models to UI
 	limit := 10
@@ -499,22 +499,22 @@ func (s *AppState) TestAPI() error {
 		limit = len(modelsResp.Models)
 	}
 	for i := 0; i < limit; i++ {
-		s.Log(" - " + modelsResp.Models[i].Name)
+		a.Log(" - " + modelsResp.Models[i].Name)
 	}
 
 	// Log ALL models to debug.log file unconditionally
-	s.LogToFile("Full Model List:")
+	a.LogToFile("Full Model List:")
 	for _, m := range modelsResp.Models {
-		s.LogToFile(" - " + m.Name)
+		a.LogToFile(" - " + m.Name)
 	}
 
 	if len(modelsResp.Models) > limit {
-		s.Log(fmt.Sprintf(" ... and %d more. Full list in debug.log", len(modelsResp.Models)-limit))
+		a.Log(fmt.Sprintf(" ... and %d more. Full list in debug.log", len(modelsResp.Models)-limit))
 	}
 	return nil
 }
 
-func (s *AppState) findJSONString(data interface{}, targetKey string) string {
+func (a *App) findJSONString(data interface{}, targetKey string) string {
 	switch v := data.(type) {
 	case map[string]interface{}:
 		for k, val := range v {
@@ -523,13 +523,13 @@ func (s *AppState) findJSONString(data interface{}, targetKey string) string {
 					return str
 				}
 			}
-			if found := s.findJSONString(val, targetKey); found != "" {
+			if found := a.findJSONString(val, targetKey); found != "" {
 				return found
 			}
 		}
 	case []interface{}:
 		for _, item := range v {
-			if found := s.findJSONString(item, targetKey); found != "" {
+			if found := a.findJSONString(item, targetKey); found != "" {
 				return found
 			}
 		}
@@ -537,9 +537,9 @@ func (s *AppState) findJSONString(data interface{}, targetKey string) string {
 	return ""
 }
 
-func (s *AppState) CheckBatchStatus(job *BatchJob) error {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s?key=%s", job.JobID, s.Config.APIKey)
-	resp, err := s.HTTPClient.Get(url)
+func (a *App) CheckBatchStatus(job *BatchJob) error {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s?key=%s", job.JobID, a.Config.APIKey)
+	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
 		return err
 	}
@@ -547,7 +547,7 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		return s.HandleError(body, resp.StatusCode)
+		return a.HandleError(body, resp.StatusCode)
 	}
 
 	var res interface{}
@@ -556,10 +556,10 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 	}
 
 	// Log raw response to debug file for troubleshooting
-	s.LogToFile(fmt.Sprintf("Raw Status Response for %s: %s", job.JobID, string(body)))
+	a.LogToFile(fmt.Sprintf("Raw Status Response for %s: %s", job.JobID, string(body)))
 
 	// Robustly find 'state' and normalization
-	state := s.findJSONString(res, "state")
+	state := a.findJSONString(res, "state")
 	if state == "" {
 		if job.Status == "" {
 			state = "UNKNOWN"
@@ -571,33 +571,33 @@ func (s *AppState) CheckBatchStatus(job *BatchJob) error {
 		state = state[len("BATCH_STATE_"):]
 	}
 	job.Status = state
-	s.Log(fmt.Sprintf("Batch %s status: %s", job.JobID, state))
+	a.Log(fmt.Sprintf("Batch %s status: %s", job.JobID, state))
 
 	if state == "SUCCEEDED" {
-		respFile := s.findJSONString(res, "responseFile")
+		respFile := a.findJSONString(res, "responseFile")
 		if respFile == "" {
-			respFile = s.findJSONString(res, "responsesFile")
+			respFile = a.findJSONString(res, "responsesFile")
 		}
 
 		if respFile != "" {
-			s.Log("Batch " + job.JobID + " succeeded. Downloading results...")
-			return s.DownloadBatchResults(respFile)
+			a.Log("Batch " + job.JobID + " succeeded. Downloading results...")
+			return a.DownloadBatchResults(respFile)
 		}
 	} else if state == "FAILED" || state == "CANCELLED" || state == "EXPIRED" {
-		s.CleanupJobsFile()
+		a.CleanupJobsFile()
 	}
 	return nil
 }
 
-func (s *AppState) CleanupJobsFile() {
-	s.Mu.RLock()
+func (a *App) CleanupJobsFile() {
+	a.Mu.RLock()
 	var activeIDs []string
-	for _, job := range s.BatchJobs {
+	for _, job := range a.BatchJobs {
 		if job.Status != "SUCCEEDED" && job.Status != "FAILED" && job.Status != "CANCELLED" && job.Status != "EXPIRED" && job.Status != "Success" && job.Status != "Failed" {
 			activeIDs = append(activeIDs, job.JobID)
 		}
 	}
-	s.Mu.RUnlock()
+	a.Mu.RUnlock()
 
 	if len(activeIDs) == 0 {
 		os.Remove("jobs.txt")
@@ -615,9 +615,9 @@ func (s *AppState) CleanupJobsFile() {
 	}
 }
 
-func (s *AppState) DownloadBatchResults(fileID string) error {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media&key=%s", fileID, s.Config.APIKey)
-	resp, err := s.HTTPClient.Get(url)
+func (a *App) DownloadBatchResults(fileID string) error {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media&key=%s", fileID, a.Config.APIKey)
+	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
 		return err
 	}
@@ -640,19 +640,19 @@ func (s *AppState) DownloadBatchResults(fileID string) error {
 		}
 
 		if len(result.Error) > 0 {
-			s.Log("Task " + result.CustomID + " failed in batch: " + string(result.Error))
+			a.Log("Task " + result.CustomID + " failed in batch: " + string(result.Error))
 			continue
 		}
 
 		// Port image extraction logic from ProcessResponse for result.Response
-		s.ProcessBatchItem(result.Response, result.CustomID)
+		a.ProcessBatchItem(result.Response, result.CustomID)
 	}
 
-	s.CleanupJobsFile()
+	a.CleanupJobsFile()
 	return nil
 }
 
-func (s *AppState) ProcessBatchItem(respBody []byte, customID string) {
+func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 	// Nested parsing for image data
 	var resp struct {
 		Candidates []struct {
@@ -678,18 +678,18 @@ func (s *AppState) ProcessBatchItem(respBody []byte, customID string) {
 				}
 
 				fileName := fmt.Sprintf("Batch_%s_%d.%s", customID, time.Now().Unix(), ext)
-				outPath := filepath.Join(s.Config.OutputDir, fileName)
+				outPath := filepath.Join(a.Config.OutputDir, fileName)
 
-				os.MkdirAll(s.Config.OutputDir, 0755)
+				os.MkdirAll(a.Config.OutputDir, 0755)
 				os.WriteFile(outPath, data, 0644)
-				s.Log("Saved batch image: " + outPath)
+				a.Log("Saved batch image: " + outPath)
 			}
 		}
 	}
 }
 
-func (s *AppState) ProcessResponse(body []byte, task *TaskInfo) error {
-	s.LogToFile(fmt.Sprintf("DEBUG: Processing response for task %d. Body length: %d", task.ID, len(body)))
+func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
+	a.LogToFile(fmt.Sprintf("DEBUG: Processing response for task %d. Body length: %d", task.ID, len(body)))
 	// 1. Try Gemini Candidates format
 	var geminiResp struct {
 		Candidates []struct {
@@ -712,7 +712,7 @@ func (s *AppState) ProcessResponse(body []byte, task *TaskInfo) error {
 		}
 		for _, part := range cand.Content.Parts {
 			if part.InlineData.Data != "" {
-				return s.SaveBase64Image(part.InlineData.Data, part.InlineData.MimeType, task.ID)
+				return a.SaveBase64Image(part.InlineData.Data, part.InlineData.MimeType, task.ID)
 			}
 		}
 	}
@@ -726,14 +726,14 @@ func (s *AppState) ProcessResponse(body []byte, task *TaskInfo) error {
 	}
 	if err := json.Unmarshal(body, &imagenResp); err == nil && len(imagenResp.Predictions) > 0 {
 		pred := imagenResp.Predictions[0]
-		return s.SaveBase64Image(pred.BytesBase64Encoded, pred.MimeType, task.ID)
+		return a.SaveBase64Image(pred.BytesBase64Encoded, pred.MimeType, task.ID)
 	}
 
-	s.LogToFile(fmt.Sprintf("DEBUG: No image found in response for task %d. Body: %s", task.ID, string(body)))
+	a.LogToFile(fmt.Sprintf("DEBUG: No image found in response for task %d. Body: %s", task.ID, string(body)))
 	return fmt.Errorf("no image data in response (Check debug.log for body)")
 }
 
-func (s *AppState) SaveBase64Image(b64, mime string, taskID int) error {
+func (a *App) SaveBase64Image(b64, mime string, taskID int) error {
 	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return err
@@ -745,12 +745,12 @@ func (s *AppState) SaveBase64Image(b64, mime string, taskID int) error {
 	}
 
 	fileName := fmt.Sprintf("GoTask_%d_%d.%s", taskID, time.Now().Unix(), ext)
-	outPath := filepath.Join(s.Config.OutputDir, fileName)
+	outPath := filepath.Join(a.Config.OutputDir, fileName)
 
-	os.MkdirAll(s.Config.OutputDir, 0755)
+	os.MkdirAll(a.Config.OutputDir, 0755)
 	err = os.WriteFile(outPath, data, 0644)
 	if err == nil {
-		s.Log("Saved image to: " + outPath)
+		a.Log("Saved image to: " + outPath)
 	}
 	return err
 }

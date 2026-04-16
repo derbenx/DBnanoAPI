@@ -10,10 +10,10 @@ type SessionData struct {
 	Tasks  []*TaskInfo  `json:"tasks"`
 }
 
-func (s *AppState) SaveSession(w io.Writer) error {
+func (a *App) SaveSession(w io.Writer) error {
 	data := SessionData{
-		Images: s.Images,
-		Tasks:  s.Tasks,
+		Images: a.Images,
+		Tasks:  a.Tasks,
 	}
 	bytes, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -24,7 +24,7 @@ func (s *AppState) SaveSession(w io.Writer) error {
 	return err
 }
 
-func (s *AppState) LoadSession(r io.Reader) error {
+func (a *App) LoadSession(r io.Reader) error {
 	bytes, err := io.ReadAll(r)
 	if err != nil {
 		return err
@@ -36,7 +36,7 @@ func (s *AppState) LoadSession(r io.Reader) error {
 		return err
 	}
 
-	s.Images = data.Images
-	s.Tasks = data.Tasks
+	a.Images = data.Images
+	a.Tasks = data.Tasks
 	return nil
 }

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>NanoGo Pro Editor</title>
+</head>
+<body>
+    <div id="app">
+        <div class="tabs">
+            <div class="tab active" data-tab="create">Create</div>
+            <div class="tab" data-tab="batches">Batches</div>
+            <div class="tab" data-tab="settings">Settings</div>
+        </div>
+
+        <div id="tab-create" class="tab-content main-content">
+            <div class="left-panel">
+                <div class="top-split">
+                    <div class="panel-header">
+                        <span>Images</span>
+                        <div class="header-btns">
+                            <button onclick="window.SelectAndAddMultipleImages()">Add Images</button>
+                            <button onclick="window.CreateNewImage()">New Image</button>
+                        </div>
+                    </div>
+                    <div class="list-header">
+                        <span style="width: 30px">Sel</span>
+                        <span style="width: 30px">#</span>
+                        <span style="width: 60px">MBs</span>
+                        <span style="width: 50px">Tasks</span>
+                        <span style="flex: 1">Image</span>
+                    </div>
+                    <div id="image-list" class="list-content"></div>
+                </div>
+                <div class="bottom-split">
+                    <div class="panel-header">
+                        <span>Tasks</span>
+                        <button onclick="window.AddTaskFromUI()">Add Task</button>
+                    </div>
+                    <div class="list-header">
+                        <span style="width: 60px">Img</span>
+                        <span style="width: 120px">Tier</span>
+                        <span style="width: 60px">Ratio</span>
+                        <span style="width: 100px">Status</span>
+                        <span style="width: 80px">Cost</span>
+                        <span style="flex: 1">Prompt</span>
+                    </div>
+                    <div id="task-list" class="list-content"></div>
+                </div>
+                <div class="btn-group">
+                    <button id="btn-load-session">Load Session</button>
+                    <button id="btn-save-session">Save Session</button>
+                    <button id="btn-run" style="background-color: #27ae60">RUN IMMEDIATE</button>
+                </div>
+            </div>
+            <div class="right-panel">
+                <div id="editor">
+                    <div class="input-field">
+                        <label>Source IDs:</label>
+                        <input type="text" id="source-ids">
+                    </div>
+                    <div class="input-field">
+                        <label>Positive Prompt:</label>
+                        <textarea id="prompt" rows="5"></textarea>
+                    </div>
+                    <div class="input-field">
+                        <label>Negative Prompt:</label>
+                        <textarea id="neg-prompt" rows="3"></textarea>
+                    </div>
+                    <div class="input-field">
+                        <label>Tier:</label>
+                        <select id="tier-select">
+                            <option>Nano Flash 1K</option>
+                            <option>Nano Pro 1K</option>
+                            <option>Nano Pro 2K</option>
+                            <option>Nano Pro 4K</option>
+                            <option>Nano 2 1K</option>
+                            <option>Nano 2 2K</option>
+                            <option>Nano 2 4K</option>
+                            <option>Imagen 2K</option>
+                            <option>Imagen Ultra 2K</option>
+                        </select>
+                    </div>
+                    <div class="input-field">
+                        <label>Aspect Ratio:</label>
+                        <select id="ratio-select">
+                            <option>1:1</option>
+                            <option>3:4</option>
+                            <option>4:3</option>
+                            <option>9:16</option>
+                            <option>16:9</option>
+                            <option>21:9</option>
+                        </select>
+                    </div>
+                    <div id="cost-display">Cost: $0.0000</div>
+                </div>
+                <div class="preview-container">
+                    <div id="image-preview">No image selected</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-batches" class="tab-content" style="display: none; padding: 20px;">
+            <h2>Batch Jobs</h2>
+            <div id="batch-list"></div>
+        </div>
+
+        <div id="tab-settings" class="tab-content" style="display: none; padding: 20px;">
+            <h2>Settings</h2>
+            <div class="input-field">
+                <label>API Key:</label>
+                <input type="text" id="settings-api-key">
+            </div>
+            <button onclick="window.TestConnection()">Test API Key</button>
+            <button onclick="window.SaveSettings()">Save Configuration</button>
+        </div>
+
+        <div id="logs" class="log-area"></div>
+    </div>
+    <script src="./src/main.js" type="module"></script>
+</body>
+</html>
