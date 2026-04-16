@@ -944,17 +944,15 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 		),
 	)
 
-	imageScroll := container.NewScroll(imageTable)
-	imageScroll.SetMinSize(fyne.NewSize(50, 50))
+	imageTable.SetMinSize(fyne.NewSize(50, 50))
 
-	topHalf := container.NewHSplit(imageScroll, previewContainer)
+	topHalf := container.NewHSplit(imageTable, previewContainer)
 	topHalf.Offset = s.Config.SplitOffsetTop
 	s.TopSplit = topHalf
 
-	taskScroll := container.NewScroll(taskTable)
-	taskScroll.SetMinSize(fyne.NewSize(50, 50))
+	taskTable.SetMinSize(fyne.NewSize(50, 50))
 
-	leftBottom := container.NewBorder(nil, btnBox, nil, nil, taskScroll)
+	leftBottom := container.NewBorder(nil, btnBox, nil, nil, taskTable)
 	right := container.NewVScroll(taskEditor)
 
 	s.OnImagesUpdated = func() {
@@ -1034,6 +1032,10 @@ func (s *AppState) makeCreateTab() fyne.CanvasObject {
 					s.NextTaskID = 1
 				}
 				s.Mu.Unlock()
+
+				preview.File = ""
+				preview.Resource = nil
+				preview.Refresh()
 			} else {
 				s.Mu.Unlock()
 			}

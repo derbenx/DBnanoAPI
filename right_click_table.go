@@ -40,10 +40,8 @@ type RightClickTable struct {
 }
 
 func NewRightClickTable(length func() (int, int), create func(*widget.Table) fyne.CanvasObject, update func(widget.TableCellID, fyne.CanvasObject)) *RightClickTable {
-	t := &widget.Table{}
-	t.Length = length
+	t := widget.NewTable(length, func() fyne.CanvasObject { return nil }, update)
 	t.CreateCell = func() fyne.CanvasObject { return create(t) }
-	t.UpdateCell = update
 
 	rt := &RightClickTable{Table: t, selectedID: widget.TableCellID{Row: -1, Col: -1}}
 
