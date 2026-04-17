@@ -139,9 +139,7 @@ func (a *App) GetTasks() []*TaskInfo {
 }
 
 func (a *App) Log(msg string) {
-	timestamp := time.Now().Format("15:04:05")
-	entry := "[" + timestamp + "] " + msg
-	runtime.EventsEmit(a.ctx, "log", entry)
+	runtime.EventsEmit(a.ctx, "log", msg)
 
 	if a.Config.Debug {
 		a.LogToFile(msg)
@@ -543,8 +541,14 @@ func (a *App) executeTask(task *TaskInfo) {
 	a.Mu.Unlock()
 
 	defer func() {
+		if r := recover(); r != nil {
+			a.Log(fmt.Sprintf("Recovered from panic in task %d: %v", task.ID, r))
+		}
 		a.Mu.Lock()
 		task.RunningCount--
+		if task.RunningCount < 0 {
+			task.RunningCount = 0
+		}
 		a.Mu.Unlock()
 		runtime.EventsEmit(a.ctx, "tasks_updated")
 	}()
@@ -626,24 +630,11 @@ func (a *App) OpenImageFolder() {
 	// Ensure the directory exists
 	os.MkdirAll(abs, 0755)
 
-	// BrowserOpenURL on some platforms might not handle file:// correctly or
-	// might be sensitive to the path format.
-	// For local folders, let's try just the absolute path first, and if that fails,
-	// use a more platform-agnostic approach.
-	// Actually, Wails BrowserOpenURL documentation says it's for URLs.
-	// For local folders, maybe we should use a different approach?
-	// On Windows: explorer <path>
-	// On Mac: open <path>
-	// On Linux: xdg-open <path>
-
-	// But Wails should handle it. Let's try to ensure it's a valid URL.
-	u := "file://" + filepath.ToSlash(abs)
-	if !strings.HasPrefix(u, "file:///") {
-		u = strings.Replace(u, "file://", "file:///", 1)
-	}
-
 	a.Log("Opening folder: " + abs)
-	runtime.BrowserOpenURL(a.ctx, u)
+
+	// On Windows, BrowserOpenURL with file:// sometimes fails for local directories.
+	// Using a more direct approach or ensuring the path is properly formatted.
+	runtime.BrowserOpenURL(a.ctx, abs)
 }
 
 func (a *App) GetLastGeneratedImage(taskID int) string {

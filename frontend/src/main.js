@@ -162,7 +162,13 @@ function setupEventListeners() {
     window.CreateNewImage = CreateNewImage;
     window.TestConnection = TestConnection;
     window.DeleteImage = DeleteImage;
-    window.DeleteTask = DeleteTask;
+    window.DeleteTask = (id) => {
+        if (state.selectedTaskID === id) {
+            state.selectedTaskID = null;
+            clearEditor();
+        }
+        DeleteTask(id);
+    };
     window.ChangeImageUI = ChangeImageUI;
     window.DuplicateTask = DuplicateTask;
     window.ToggleTaskDisabled = ToggleTaskDisabled;
