@@ -60,7 +60,7 @@ type TaskInfo struct {
 	Format         string
 	Disabled       bool
 	SourcePath     string
-	RunningCount   int `json:"-"`
+	RunningCount   int
 	LastSavedPath  string
 }
 

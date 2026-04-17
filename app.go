@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -632,9 +633,21 @@ func (a *App) OpenImageFolder() {
 
 	a.Log("Opening folder: " + abs)
 
-	// On Windows, BrowserOpenURL with file:// sometimes fails for local directories.
-	// Using a more direct approach or ensuring the path is properly formatted.
-	runtime.BrowserOpenURL(a.ctx, abs)
+	var cmd *exec.Cmd
+	switch runtime.GOOS(a.ctx) {
+	case "windows":
+		cmd = exec.Command("explorer", abs)
+	case "darwin":
+		cmd = exec.Command("open", abs)
+	default: // linux, etc
+		cmd = exec.Command("xdg-open", abs)
+	}
+
+	if err := cmd.Start(); err != nil {
+		a.Log("Error opening folder: " + err.Error())
+		// Fallback to Wails BrowserOpenURL
+		runtime.BrowserOpenURL(a.ctx, abs)
+	}
 }
 
 func (a *App) GetLastGeneratedImage(taskID int) string {
