@@ -21,6 +21,8 @@ export function CheckBatchStatus(arg1:main.BatchJob):Promise<void>;
 
 export function CleanupJobsFile():Promise<void>;
 
+export function ClearFinishedJobs():Promise<void>;
+
 export function CreateNewImage():Promise<void>;
 
 export function DeleteImage(arg1:string):Promise<void>;
@@ -31,6 +33,8 @@ export function DownloadBatchResults(arg1:string):Promise<void>;
 
 export function DuplicateTask(arg1:number):Promise<void>;
 
+export function GetBatchJobs():Promise<Array<main.BatchJob>>;
+
 export function GetConfig():Promise<main.Config>;
 
 export function GetCost(arg1:string,arg2:string):Promise<number>;
@@ -38,6 +42,8 @@ export function GetCost(arg1:string,arg2:string):Promise<number>;
 export function GetImageBase64(arg1:string):Promise<string>;
 
 export function GetImages():Promise<Array<main.ImageInfo>>;
+
+export function GetLastGeneratedImage(arg1:number):Promise<string>;
 
 export function GetModelID(arg1:string):Promise<string>;
 
@@ -55,9 +61,13 @@ export function Log(arg1:string):Promise<void>;
 
 export function LogToFile(arg1:string):Promise<void>;
 
+export function OpenImageFolder():Promise<void>;
+
 export function ProcessBatchItem(arg1:Array<number>,arg2:string):Promise<void>;
 
 export function ProcessResponse(arg1:Array<number>,arg2:main.TaskInfo):Promise<void>;
+
+export function RunBatch():Promise<void>;
 
 export function RunTask(arg1:main.TaskInfo):Promise<void>;
 

@@ -21,7 +21,7 @@ import {
     UpdateTask,
     GetCost
 } from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime/runtime';
+import { EventsOn, OnFileDrop } from '../wailsjs/runtime/runtime';
 
 let state = {
     images: [],
@@ -39,6 +39,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     try {
         state.config = await GetConfig();
         populateSettings(state.config);
+
+        OnFileDrop((x, y, paths) => {
+            if (paths && paths.length > 0) {
+                AddImages(paths);
+            }
+        }, true);
 
         setupEventListeners();
         await refreshData();
@@ -197,18 +203,9 @@ function setupEventListeners() {
         e.stopPropagation();
     };
 
-    window.handleDrop = async (e) => {
+    window.handleDrop = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const files = Array.from(e.dataTransfer.files);
-        const paths = files.map(f => f.path);
-        if (paths.length > 0) {
-            const validPaths = paths.filter(p => p && (p.toLowerCase().endsWith('.jpg') || p.toLowerCase().endsWith('.jpeg') || p.toLowerCase().endsWith('.png')));
-            if (validPaths.length > 0) {
-                await AddImages(validPaths);
-                addLog(`Added ${validPaths.length} images via drop.`);
-            }
-        }
     };
 
     // Global click to hide context menu

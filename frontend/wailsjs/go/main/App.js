@@ -38,6 +38,10 @@ export function CleanupJobsFile() {
   return window['go']['main']['App']['CleanupJobsFile']();
 }
 
+export function ClearFinishedJobs() {
+  return window['go']['main']['App']['ClearFinishedJobs']();
+}
+
 export function CreateNewImage() {
   return window['go']['main']['App']['CreateNewImage']();
 }
@@ -58,6 +62,10 @@ export function DuplicateTask(arg1) {
   return window['go']['main']['App']['DuplicateTask'](arg1);
 }
 
+export function GetBatchJobs() {
+  return window['go']['main']['App']['GetBatchJobs']();
+}
+
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
@@ -72,6 +80,10 @@ export function GetImageBase64(arg1) {
 
 export function GetImages() {
   return window['go']['main']['App']['GetImages']();
+}
+
+export function GetLastGeneratedImage(arg1) {
+  return window['go']['main']['App']['GetLastGeneratedImage'](arg1);
 }
 
 export function GetModelID(arg1) {
@@ -106,12 +118,20 @@ export function LogToFile(arg1) {
   return window['go']['main']['App']['LogToFile'](arg1);
 }
 
+export function OpenImageFolder() {
+  return window['go']['main']['App']['OpenImageFolder']();
+}
+
 export function ProcessBatchItem(arg1, arg2) {
   return window['go']['main']['App']['ProcessBatchItem'](arg1, arg2);
 }
 
 export function ProcessResponse(arg1, arg2) {
   return window['go']['main']['App']['ProcessResponse'](arg1, arg2);
+}
+
+export function RunBatch() {
+  return window['go']['main']['App']['RunBatch']();
 }
 
 export function RunTask(arg1) {

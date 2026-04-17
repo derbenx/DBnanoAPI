@@ -315,6 +315,19 @@ func (a *App) LoadSessionUI() {
 
 func (a *App) AddTask(imgIDs string, agent string, size string, ratio string, prompt string, negPrompt string, paths string) {
 	a.Mu.Lock()
+
+	// Increment TaskCount for each source image
+	ids := strings.Split(imgIDs, "+")
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		for _, img := range a.Images {
+			if img.ID == id {
+				img.TaskCount++
+				break
+			}
+		}
+	}
+
 	newTask := &TaskInfo{
 		ID:             a.NextTaskID,
 		ImgIDs:         imgIDs,
@@ -402,10 +415,27 @@ func (a *App) DeleteTask(id int) {
 	}
 
 	if idx != -1 {
+		deletedTask := a.Tasks[idx]
 		a.Tasks = append(a.Tasks[:idx], a.Tasks[idx+1:]...)
+
+		// Decrement TaskCount for each source image
+		ids := strings.Split(deletedTask.ImgIDs, "+")
+		for _, imgID := range ids {
+			imgID = strings.TrimSpace(imgID)
+			for _, img := range a.Images {
+				if img.ID == imgID {
+					if img.TaskCount > 0 {
+						img.TaskCount--
+					}
+					break
+				}
+			}
+		}
+
 		if len(a.Tasks) == 0 {
 			a.NextTaskID = 1
 		}
+		runtime.EventsEmit(a.ctx, "images_updated")
 		runtime.EventsEmit(a.ctx, "tasks_updated")
 		a.Log("Task deleted.")
 	}
@@ -482,38 +512,143 @@ func (a *App) ChangeImageUI(id string) {
 }
 
 func (a *App) RunTasks() {
-    a.Mu.RLock()
-    tasksCopy := make([]*TaskInfo, len(a.Tasks))
-    copy(tasksCopy, a.Tasks)
-    a.Mu.RUnlock()
+	a.Mu.RLock()
+	tasksCopy := make([]*TaskInfo, len(a.Tasks))
+	copy(tasksCopy, a.Tasks)
+	a.Mu.RUnlock()
 
-    go func() {
-        processedCount := 0
-        for _, task := range tasksCopy {
-            if task.Disabled || task.Status == "Running" {
-                continue
-            }
+	go func() {
+		processedCount := 0
+		for _, task := range tasksCopy {
+			if task.Disabled || task.Status == "Running" {
+				continue
+			}
 
-            processedCount++
-            a.Mu.Lock()
-            task.Status = "Running"
-            a.Mu.Unlock()
-            runtime.EventsEmit(a.ctx, "tasks_updated")
+			processedCount++
+			a.Mu.Lock()
+			task.Status = "Running"
+			a.Mu.Unlock()
+			runtime.EventsEmit(a.ctx, "tasks_updated")
 
-            a.Log(fmt.Sprintf("Running %s...", task.Agent))
-            err := a.RunTask(task)
-            a.Mu.Lock()
-            if err != nil {
-                task.Status = "Failed"
-                a.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
-            } else {
-                task.Status = "Success"
-            }
-            a.Mu.Unlock()
-            runtime.EventsEmit(a.ctx, "tasks_updated")
-        }
-        a.Log(fmt.Sprintf("Finished processing %d jobs.", processedCount))
-    }()
+			a.Log(fmt.Sprintf("Running %s...", task.Agent))
+			err := a.RunTask(task)
+			a.Mu.Lock()
+			if err != nil {
+				task.Status = "Failed"
+				a.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
+			} else {
+				task.Status = "Success"
+			}
+			a.Mu.Unlock()
+			runtime.EventsEmit(a.ctx, "tasks_updated")
+		}
+		a.Log(fmt.Sprintf("Finished processing %d jobs.", processedCount))
+	}()
+}
+
+func (a *App) RunBatch() {
+	a.Mu.RLock()
+	var tasks []*TaskInfo
+	for _, t := range a.Tasks {
+		if !t.Disabled && t.Status != "Running" {
+			tasks = append(tasks, t)
+		}
+	}
+	a.Mu.RUnlock()
+
+	if len(tasks) == 0 {
+		a.Log("No tasks to batch.")
+		return
+	}
+
+	go func() {
+		err := a.SubmitBatchJob(tasks)
+		if err != nil {
+			a.Log("Batch failed: " + err.Error())
+			a.Mu.Lock()
+			for _, t := range tasks {
+				t.Status = "Failed"
+			}
+			a.Mu.Unlock()
+		} else {
+			a.Mu.Lock()
+			for _, t := range tasks {
+				t.Status = "Submitted"
+			}
+			a.Mu.Unlock()
+		}
+		runtime.EventsEmit(a.ctx, "tasks_updated")
+	}()
+}
+
+func (a *App) GetBatchJobs() []*BatchJob {
+	a.Mu.RLock()
+	defer a.Mu.RUnlock()
+	return a.BatchJobs
+}
+
+func (a *App) ClearFinishedJobs() {
+	a.Mu.Lock()
+	defer a.Mu.Unlock()
+
+	var active []*BatchJob
+	for _, j := range a.BatchJobs {
+		s := j.Status
+		if s != "SUCCEEDED" && s != "FAILED" && s != "CANCELLED" && s != "EXPIRED" && s != "Success" && s != "Failed" {
+			active = append(active, j)
+		}
+	}
+	a.BatchJobs = active
+	a.CleanupJobsFile()
+	runtime.EventsEmit(a.ctx, "batch_updated")
+}
+
+func (a *App) OpenImageFolder() {
+	out := a.Config.OutputDir
+	if out == "" {
+		out = "img"
+	}
+	abs, err := filepath.Abs(out)
+	if err != nil {
+		a.Log("Error getting absolute path: " + err.Error())
+		return
+	}
+	// On Windows, explorer needs a local path. On Linux, xdg-open.
+	// Wails runtime.BrowserOpenURL works for folders too on most OSs.
+	runtime.BrowserOpenURL(a.ctx, abs)
+}
+
+func (a *App) GetLastGeneratedImage(taskID int) string {
+	out := a.Config.OutputDir
+	if out == "" {
+		out = "img"
+	}
+	files, err := os.ReadDir(out)
+	if err != nil {
+		return ""
+	}
+
+	var lastFile string
+	var lastTime time.Time
+	prefix := fmt.Sprintf("GoTask_%d_", taskID)
+	batchPrefix := fmt.Sprintf("Batch_task_%d_", taskID)
+
+	for _, f := range files {
+		if strings.HasPrefix(f.Name(), prefix) || strings.HasPrefix(f.Name(), batchPrefix) {
+			info, _ := f.Info()
+			if info.ModTime().After(lastTime) {
+				lastTime = info.ModTime()
+				lastFile = filepath.Join(out, f.Name())
+			}
+		}
+	}
+
+	if lastFile == "" {
+		return ""
+	}
+
+	b64, _ := a.GetImageBase64(lastFile)
+	return b64
 }
 
 func (a *App) GetCost(agent, size string) float64 {
