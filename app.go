@@ -529,12 +529,21 @@ func (a *App) executeTask(task *TaskInfo) {
 	a.Mu.Lock()
 	task.Status = "Running"
 	task.RunningCount++
+	mode := a.GlobalMode
 	a.Mu.Unlock()
+
+	defer func() {
+		a.Mu.Lock()
+		task.RunningCount--
+		a.Mu.Unlock()
+		runtime.EventsEmit(a.ctx, "tasks_updated")
+	}()
+
 	runtime.EventsEmit(a.ctx, "tasks_updated")
 	a.Log(fmt.Sprintf("Running %s...", task.Agent))
-	err := a.RunTask(task)
+	err := a.RunTask(task, mode)
+
 	a.Mu.Lock()
-	task.RunningCount--
 	if err != nil {
 		task.Status = "Failed"
 		a.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
@@ -542,7 +551,6 @@ func (a *App) executeTask(task *TaskInfo) {
 		task.Status = "Success"
 	}
 	a.Mu.Unlock()
-	runtime.EventsEmit(a.ctx, "tasks_updated")
 }
 
 func (a *App) RunBatch() {
@@ -600,16 +608,45 @@ func (a *App) ClearFinishedJobs() {
 
 func (a *App) OpenImageFolder() {
 	out := a.Config.OutputDir
-	if out == "" { out = "img" }
+	if out == "" {
+		out = "img"
+	}
 	abs, _ := filepath.Abs(out)
-	runtime.BrowserOpenURL(a.ctx, abs)
+
+	// Ensure the directory exists
+	os.MkdirAll(abs, 0755)
+
+	// Use file:// prefix for local paths to avoid shell metacharacter issues in some environments
+	path := abs
+	if !strings.HasPrefix(path, "/") {
+		// Windows
+		path = "/" + filepath.ToSlash(path)
+	}
+	runtime.BrowserOpenURL(a.ctx, "file://"+path)
 }
 
 func (a *App) GetLastGeneratedImage(taskID int) string {
+	lastFile := a.getLastGeneratedImagePath(taskID)
+	if lastFile == "" {
+		return ""
+	}
+	b64, _ := a.GetImageBase64(lastFile)
+	return b64
+}
+
+func (a *App) HasGeneratedImage(taskID int) bool {
+	return a.getLastGeneratedImagePath(taskID) != ""
+}
+
+func (a *App) getLastGeneratedImagePath(taskID int) string {
 	out := a.Config.OutputDir
-	if out == "" { out = "img" }
+	if out == "" {
+		out = "img"
+	}
 	files, err := os.ReadDir(out)
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	var lastFile string
 	var lastTime time.Time
 	prefix := fmt.Sprintf("GoTask_%d_", taskID)
@@ -623,19 +660,32 @@ func (a *App) GetLastGeneratedImage(taskID int) string {
 			}
 		}
 	}
-	if lastFile == "" { return "" }
-	b64, _ := a.GetImageBase64(lastFile)
-	return b64
+	return lastFile
 }
 
-func (a *App) GetCost(agent, size string) float64 {
-	return a.CalculateCost(agent, size)
+func (a *App) GetCost(agent, size, mode string) float64 {
+	a.Mu.Lock()
+	oldMode := a.GlobalMode
+	a.GlobalMode = mode
+	a.Mu.Unlock()
+
+	cost := a.CalculateCost(agent, size)
+
+	a.Mu.Lock()
+	a.GlobalMode = oldMode
+	a.Mu.Unlock()
+
+	return cost
 }
 
 func (a *App) TestConnection() {
 	go func() {
+		runtime.EventsEmit(a.ctx, "test_api_started")
 		if err := a.TestAPI(); err != nil {
 			a.Log("API Test Failed: " + err.Error())
+			runtime.EventsEmit(a.ctx, "test_api_finished", false, err.Error())
+		} else {
+			runtime.EventsEmit(a.ctx, "test_api_finished", true, "Success")
 		}
 	}()
 }

@@ -22,6 +22,7 @@ import {
     UpdateTask,
     GetCost,
     GetLastGeneratedImage,
+    HasGeneratedImage,
     ClearFinishedJobs,
     GetBatchJobs,
     OpenImageFolder
@@ -48,9 +49,10 @@ window.addEventListener('DOMContentLoaded', async () => {
 
         OnFileDrop((x, y, paths) => {
             if (paths && paths.length > 0) {
+                console.log("Files dropped:", paths);
                 AddImages(paths);
             }
-        }, true);
+        }, false);
 
         setupEventListeners();
         await refreshData();
@@ -107,6 +109,22 @@ function setupEventListeners() {
     EventsOn("batch_timer", (seconds) => {
         const timerCont = document.getElementById('batch-timer-container');
         if (timerCont) timerCont.innerText = `Next check in: ${seconds}s`;
+    });
+
+    EventsOn("test_api_started", () => {
+        const status = document.getElementById('test-api-status');
+        if (status) {
+            status.innerText = "Testing...";
+            status.style.color = "#3498db";
+        }
+    });
+
+    EventsOn("test_api_finished", (success, msg) => {
+        const status = document.getElementById('test-api-status');
+        if (status) {
+            status.innerText = success ? "Success" : "Failed";
+            status.style.color = success ? "#2ecc71" : "#e74c3c";
+        }
     });
 
     document.querySelectorAll('.tab').forEach(tab => {
@@ -210,9 +228,7 @@ function setupEventListeners() {
         task.Size = parts[parts.length - 1];
         task.Ratio = document.getElementById('ratio-select').value;
 
-        task.Cost = await GetCost(task.Agent, task.Size);
-        document.getElementById('cost-display').innerText = "Cost: $" + task.Cost.toFixed(4);
-
+        await updateCostDisplay(task.Agent, task.Size);
         await UpdateTask(task);
     };
 
@@ -313,12 +329,18 @@ function updateRunButtons() {
         }
     }
 
-    // Immediate: only works if there's a prompt. If Imagen, must have no source images.
+    // Immediate: only works if there's a prompt. If Imagen, must have no source images OR only "GENERATE" images.
     const canImmediate = hasTasks && allEnabledTasks.every(t => {
         const hasPrompt = t.Prompt && t.Prompt.trim() !== "";
         const isImagen = t.Agent.includes("Imagen");
-        const noImages = !t.ImgIDs || t.ImgIDs.trim() === "";
-        if (isImagen && !noImages) return false;
+
+        // Find image objects for IDs in t.ImgIDs
+        const ids = (t.ImgIDs || "").split("+").map(id => id.trim()).filter(id => id !== "");
+        const taskImages = state.images.filter(img => ids.includes(img.ID));
+        const onlyGenerate = taskImages.length > 0 && taskImages.every(img => img.FullPath === "<GENERATE>");
+        const noImages = ids.length === 0;
+
+        if (isImagen && !(noImages || onlyGenerate)) return false;
         return hasPrompt;
     });
     immBtn.disabled = immDisabled || !canImmediate;
@@ -443,7 +465,6 @@ function renderTaskList() {
             <span style="width: 120px">${task.Agent} ${task.Size}</span>
             <span style="width: 60px">${task.Ratio}</span>
             <span style="width: 100px">${task.Status}</span>
-            <span style="width: 80px">$${task.Cost.toFixed(4)}</span>
             <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${task.Prompt}</span>
         `;
 
@@ -461,27 +482,38 @@ function renderTaskList() {
             renderTaskList();
         };
 
-        item.oncontextmenu = (e) => {
+        item.oncontextmenu = async (e) => {
             e.preventDefault();
-            showContextMenu(e.clientX, e.clientY, [
-                { label: task.Disabled ? 'Enable' : 'Disable', action: () => window.ToggleTaskDisabled(task.ID) },
-                { label: 'Show Generated Image', action: () => window.ShowGeneratedImage(task.ID) },
-                { label: 'Duplicate Task', action: () => window.DuplicateTask(task.ID) },
-                { label: 'Delete Task', action: () => window.DeleteTask(task.ID) }
-            ]);
+            const hasImg = await HasGeneratedImage(task.ID);
+            const menuItems = [
+                { label: task.Disabled ? 'Enable' : 'Disable', action: () => window.ToggleTaskDisabled(task.ID) }
+            ];
+            if (hasImg) {
+                menuItems.push({ label: 'Show Generated Image', action: () => window.ShowGeneratedImage(task.ID) });
+            }
+            menuItems.push({ label: 'Duplicate Task', action: () => window.DuplicateTask(task.ID) });
+            menuItems.push({ label: 'Delete Task', action: () => window.DeleteTask(task.ID) });
+
+            showContextMenu(e.clientX, e.clientY, menuItems);
         };
 
         list.appendChild(item);
     });
 }
 
-function populateEditor(task) {
+async function populateEditor(task) {
     document.getElementById('source-ids').value = task.ImgIDs;
     document.getElementById('prompt').value = task.Prompt;
     document.getElementById('neg-prompt').value = task.NegativePrompt;
     document.getElementById('tier-select').value = task.Agent + " " + task.Size;
     document.getElementById('ratio-select').value = task.Ratio;
-    document.getElementById('cost-display').innerText = "Cost: $" + task.Cost.toFixed(4);
+    await updateCostDisplay(task.Agent, task.Size);
+}
+
+async function updateCostDisplay(agent, size) {
+    const costImm = await GetCost(agent, size, "Immediate");
+    const costBatch = await GetCost(agent, size, "Batch");
+    document.getElementById('cost-display').innerText = `Immediate: $${costImm.toFixed(4)} | Batch: $${costBatch.toFixed(4)}`;
 }
 
 // --- Batch List ---

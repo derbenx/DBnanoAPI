@@ -43,7 +43,6 @@
                         <span style="width: 120px">Tier</span>
                         <span style="width: 60px">Ratio</span>
                         <span style="width: 100px">Status</span>
-                        <span style="width: 80px">Cost</span>
                         <span style="flex: 1">Prompt</span>
                     </div>
                     <div id="task-list" class="list-content"></div>
@@ -103,7 +102,7 @@
                             <option>8:1</option>
                         </select>
                     </div>
-                    <div id="cost-display" style="font-weight: bold; font-size: 1.1em; color: #f1c40f">Cost: $0.0000</div>
+                    <div id="cost-display" style="font-weight: bold; font-size: 1.0em; color: #f1c40f; margin-top: 10px;">Immediate: $0.0000 | Batch: $0.0000</div>
                 </div>
                 <div id="preview-container" style="display: none;">
                     <div id="image-preview">No image selected</div>
@@ -217,7 +216,10 @@
                 </div>
             </div>
             <div class="settings-footer">
-                <button onclick="window.TestConnection()">Test API Connection</button>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button onclick="window.TestConnection()">Test API Connection</button>
+                    <span id="test-api-status" style="font-weight: bold; font-size: 0.9em;"></span>
+                </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <span id="settings-saved-msg" style="color: #2ecc71; opacity: 0; transition: opacity 0.3s;">Saved!</span>
                     <button onclick="window.SaveSettings()" style="background-color: #27ae60">Save All Configuration</button>

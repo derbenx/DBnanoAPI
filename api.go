@@ -119,7 +119,7 @@ func (a *App) CalculateCost(agent, size string) float64 {
 	return base
 }
 
-func (a *App) RunTask(task *TaskInfo) error {
+func (a *App) RunTask(task *TaskInfo, mode string) error {
 	// Validate Prompt
 	if strings.TrimSpace(task.Prompt) == "" {
 		return fmt.Errorf("task prompt is empty")
@@ -135,7 +135,12 @@ func (a *App) RunTask(task *TaskInfo) error {
 		}
 	}
 
+	a.Mu.Lock()
+	oldMode := a.GlobalMode
+	a.GlobalMode = mode
 	task.Cost = a.CalculateCost(task.Agent, task.Size)
+	a.GlobalMode = oldMode
+	a.Mu.Unlock()
 
 	modelID := a.GetModelID(task.Agent)
 

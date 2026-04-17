@@ -70,7 +70,7 @@ export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
 
-export function GetCost(arg1, arg2) {
+export function GetCost(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetCost'](arg1, arg2);
 }
 
@@ -134,7 +134,7 @@ export function RunBatch() {
   return window['go']['main']['App']['RunBatch']();
 }
 
-export function RunTask(arg1) {
+export function RunTask(arg1, arg2) {
   return window['go']['main']['App']['RunTask'](arg1);
 }
 
@@ -184,4 +184,8 @@ export function UpdateTask(arg1) {
 
 export function UploadFile(arg1) {
   return window['go']['main']['App']['UploadFile'](arg1);
+}
+
+export function HasGeneratedImage(arg1) {
+  return window['go']['main']['App']['HasGeneratedImage'](arg1);
 }
