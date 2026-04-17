@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	goruntime "runtime"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -634,7 +635,7 @@ func (a *App) OpenImageFolder() {
 	a.Log("Opening folder: " + abs)
 
 	var cmd *exec.Cmd
-	switch runtime.GOOS(a.ctx) {
+	switch goruntime.GOOS {
 	case "windows":
 		cmd = exec.Command("explorer", abs)
 	case "darwin":

@@ -456,6 +456,7 @@ function renderImageList() {
             if (e.target.type !== 'checkbox') {
                 state.selectedImageID = (state.selectedImageID === img.ID ? null : img.ID);
                 state.selectedTaskID = null;
+                clearEditor();
                 renderImageList();
                 renderTaskList();
             }
