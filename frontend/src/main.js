@@ -13,6 +13,12 @@ import {
     GetConfig,
     SaveConfig,
     TestConnection,
+    AddImages,
+    GetImageBase64,
+    ChangeImageUI,
+    DuplicateTask,
+    ToggleTaskDisabled,
+    UpdateTask,
     GetCost
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
@@ -23,7 +29,8 @@ let state = {
     config: {},
     activeTab: 'create',
     selectedImageID: null,
-    selectedTaskID: null
+    selectedTaskID: null,
+    isHoveringImage: false
 };
 
 // --- Initialization ---
@@ -31,9 +38,7 @@ let state = {
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         state.config = await GetConfig();
-        if (state.config) {
-            document.getElementById('settings-api-key').value = state.config.api_key || '';
-        }
+        populateSettings(state.config);
 
         setupEventListeners();
         await refreshData();
@@ -47,6 +52,15 @@ window.addEventListener('DOMContentLoaded', async () => {
 async function refreshData() {
     state.images = await GetImages() || [];
     state.tasks = await GetTasks() || [];
+
+    if (state.selectedImageID && !state.images.find(i => i.ID == state.selectedImageID)) {
+        state.selectedImageID = null;
+    }
+    if (state.selectedTaskID && !state.tasks.find(t => t.ID == state.selectedTaskID)) {
+        state.selectedTaskID = null;
+    }
+
+    updateRunButtons();
 }
 
 function setupEventListeners() {
@@ -58,6 +72,10 @@ function setupEventListeners() {
     EventsOn("tasks_updated", async () => {
         await refreshData();
         renderTaskList();
+        if (state.selectedTaskID) {
+            const task = state.tasks.find(t => t.ID === state.selectedTaskID);
+            if (task) populateEditor(task);
+        }
     });
 
     document.querySelectorAll('.tab').forEach(tab => {
@@ -67,7 +85,11 @@ function setupEventListeners() {
             state.activeTab = tab.dataset.tab;
 
             document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
-            document.getElementById('tab-' + state.activeTab).style.display = (state.activeTab === 'create' ? 'flex' : 'block');
+            const target = document.getElementById('tab-' + state.activeTab);
+            target.style.display = (state.activeTab === 'create' ? 'flex' : 'block');
+
+            const logs = document.getElementById('logs');
+            logs.style.display = (state.activeTab === 'settings' ? 'none' : 'block');
 
             renderAll();
         });
@@ -76,12 +98,24 @@ function setupEventListeners() {
     // Control Buttons
     document.getElementById('btn-load-session').onclick = () => LoadSessionUI();
     document.getElementById('btn-save-session').onclick = () => SaveSessionUI();
-    document.getElementById('btn-run').onclick = () => RunTasks();
+    document.getElementById('btn-run-immediate').onclick = () => {
+        RunTasks();
+        addLog("Running tasks in Immediate mode...");
+    };
+    document.getElementById('btn-run-batch').onclick = () => {
+        addLog("Batch mode submission triggered.");
+        // SubmitBatchJob not bound yet but will be handled by RunTasks logic in Go if mode set
+    };
 
-    // Global Exposure for HTML onclicks
+    // Global Exposure
     window.SelectAndAddMultipleImages = SelectAndAddMultipleImages;
     window.CreateNewImage = CreateNewImage;
     window.TestConnection = TestConnection;
+    window.DeleteImage = DeleteImage;
+    window.DeleteTask = DeleteTask;
+    window.ChangeImageUI = ChangeImageUI;
+    window.DuplicateTask = DuplicateTask;
+    window.ToggleTaskDisabled = ToggleTaskDisabled;
 
     window.AddTaskFromUI = async () => {
         const selected = state.images.filter(img => img.Selected);
@@ -99,21 +133,170 @@ function setupEventListeners() {
         const paths = selected.map(i => i.FullPath).join("|");
         const tier = document.getElementById('tier-select').value;
         const ratio = document.getElementById('ratio-select').value;
-        const prompt = document.getElementById('prompt').value;
-        const negPrompt = document.getElementById('neg-prompt').value;
+        const prompt = document.getElementById('prompt').value || state.config.default_prompt;
+        const negPrompt = document.getElementById('neg-prompt').value || state.config.default_neg_prompt;
 
         const parts = tier.split(" ");
         const agent = parts.slice(0, -1).join(" ");
         const size = parts[parts.length - 1];
 
         await AddTask(imgIDs, agent, size, ratio, prompt, negPrompt, paths);
+        addLog("Task added for: " + imgIDs);
+    };
+
+    window.UpdateTaskFromUI = async () => {
+        if (!state.selectedTaskID) return;
+        const task = state.tasks.find(t => t.ID === state.selectedTaskID);
+        if (!task) return;
+
+        task.ImgIDs = document.getElementById('source-ids').value;
+        task.Prompt = document.getElementById('prompt').value;
+        task.NegativePrompt = document.getElementById('neg-prompt').value;
+        const tier = document.getElementById('tier-select').value;
+        const parts = tier.split(" ");
+        task.Agent = parts.slice(0, -1).join(" ");
+        task.Size = parts[parts.length - 1];
+        task.Ratio = document.getElementById('ratio-select').value;
+
+        task.Cost = await GetCost(task.Agent, task.Size);
+        document.getElementById('cost-display').innerText = "Cost: $" + task.Cost.toFixed(4);
+
+        await UpdateTask(task);
     };
 
     window.SaveSettings = async () => {
-        state.config.api_key = document.getElementById('settings-api-key').value;
-        await SaveConfig(state.config);
-        addLog("Settings saved");
+        const c = state.config;
+        c.api_key = document.getElementById('settings-api-key').value;
+        c.output_dir = document.getElementById('settings-output-dir').value;
+        c.debug = document.getElementById('settings-debug').checked;
+        c.encourage_gen = document.getElementById('settings-encourage-gen').value;
+        c.encourage_edt = document.getElementById('settings-encourage-edt').value;
+        c.temperature = parseFloat(document.getElementById('settings-temp').value);
+        c.top_p = parseFloat(document.getElementById('settings-top-p').value);
+        c.top_k = parseInt(document.getElementById('settings-top-k').value);
+        c.max_output_tokens = parseInt(document.getElementById('settings-max-tokens').value);
+
+        c.safety_settings[0].threshold = document.getElementById('safety-harassment').value;
+        c.safety_settings[1].threshold = document.getElementById('safety-hate').value;
+        c.safety_settings[2].threshold = document.getElementById('safety-sex').value;
+        c.safety_settings[3].threshold = document.getElementById('safety-danger').value;
+
+        c.model_nano_flash = document.getElementById('settings-model-flash').value;
+        c.model_nano_pro = document.getElementById('settings-model-pro').value;
+        c.model_nano_2 = document.getElementById('settings-model-2').value;
+        c.model_imagen = document.getElementById('settings-model-imagen').value;
+        c.model_imagen_ultra = document.getElementById('settings-model-ultra').value;
+
+        await SaveConfig(c);
+        addLog("Configuration saved to config.json");
     };
+
+    // Drag and Drop
+    window.handleDragOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    window.handleDrop = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const files = Array.from(e.dataTransfer.files);
+        const paths = files.map(f => f.path);
+        if (paths.length > 0) {
+            const validPaths = paths.filter(p => p && (p.toLowerCase().endsWith('.jpg') || p.toLowerCase().endsWith('.jpeg') || p.toLowerCase().endsWith('.png')));
+            if (validPaths.length > 0) {
+                await AddImages(validPaths);
+                addLog(`Added ${validPaths.length} images via drop.`);
+            }
+        }
+    };
+
+    // Global click to hide context menu
+    document.addEventListener('click', () => {
+        const menu = document.getElementById('context-menu');
+        if (menu) menu.style.display = 'none';
+    });
+}
+
+function populateSettings(c) {
+    if (!c) return;
+    document.getElementById('settings-api-key').value = c.api_key || '';
+    document.getElementById('settings-output-dir').value = c.output_dir || '';
+    document.getElementById('settings-debug').checked = !!c.debug;
+    document.getElementById('settings-encourage-gen').value = c.encourage_gen || '';
+    document.getElementById('settings-encourage-edt').value = c.encourage_edt || '';
+    document.getElementById('settings-temp').value = c.temperature || 1.0;
+    document.getElementById('settings-top-p').value = c.top_p || 0.9;
+    document.getElementById('settings-top-k').value = c.top_k || 40;
+    document.getElementById('settings-max-tokens').value = c.max_output_tokens || 8192;
+
+    if (c.safety_settings && c.safety_settings.length >= 4) {
+        document.getElementById('safety-harassment').value = c.safety_settings[0].threshold;
+        document.getElementById('safety-hate').value = c.safety_settings[1].threshold;
+        document.getElementById('safety-sex').value = c.safety_settings[2].threshold;
+        document.getElementById('safety-danger').value = c.safety_settings[3].threshold;
+    }
+
+    document.getElementById('settings-model-flash').value = c.model_nano_flash || '';
+    document.getElementById('settings-model-pro').value = c.model_nano_pro || '';
+    document.getElementById('settings-model-2').value = c.model_nano_2 || '';
+    document.getElementById('settings-model-imagen').value = c.model_imagen || '';
+    document.getElementById('settings-model-ultra').value = c.model_imagen_ultra || '';
+}
+
+function updateRunButtons() {
+    const immBtn = document.getElementById('btn-run-immediate');
+    const batchBtn = document.getElementById('btn-run-batch');
+
+    if (!immBtn || !batchBtn) return;
+
+    const hasTasks = state.tasks.length > 0;
+    immBtn.disabled = !hasTasks;
+
+    const activeTasks = state.tasks.filter(t => !t.Disabled);
+    let canBatch = activeTasks.length > 0;
+    if (canBatch) {
+        const firstAgent = activeTasks[0].Agent;
+        if (firstAgent.includes("Imagen")) {
+            canBatch = false;
+        } else {
+            canBatch = activeTasks.every(t => t.Agent === firstAgent);
+        }
+    }
+    batchBtn.disabled = !canBatch;
+}
+
+async function showPreview(id) {
+    state.isHoveringImage = true;
+    document.getElementById('editor-container').style.display = 'none';
+    document.getElementById('preview-container').style.display = 'flex';
+
+    const img = state.images.find(i => i.ID == id);
+    const preview = document.getElementById('image-preview');
+    if (img) {
+        if (img.FullPath === "<GENERATE>") {
+            preview.innerText = 'GENERATE';
+        } else {
+            try {
+                const b64 = await GetImageBase64(img.FullPath);
+                if (b64) {
+                    preview.innerHTML = `<img src="data:image/jpeg;base64,${b64}" class="preview-image">`;
+                } else {
+                    preview.innerText = 'Error loading image data';
+                }
+            } catch (err) {
+                preview.innerText = 'Error: ' + err;
+            }
+        }
+    }
+}
+
+function hidePreview() {
+    state.isHoveringImage = false;
+    if (!state.selectedImageID) {
+        document.getElementById('editor-container').style.display = 'block';
+        document.getElementById('preview-container').style.display = 'none';
+    }
 }
 
 function renderAll() {
@@ -144,30 +327,31 @@ function renderImageList() {
         const check = item.querySelector('.img-check');
         check.onchange = (e) => {
             img.Selected = e.target.checked;
+            updateRunButtons();
         };
+
+        item.onmouseenter = () => showPreview(img.ID);
+        item.onmouseleave = () => hidePreview();
 
         item.onclick = (e) => {
-            if (e.target.type !== 'checkbox') selectImage(img.ID);
+            if (e.target.type !== 'checkbox') {
+                state.selectedImageID = (state.selectedImageID === img.ID ? null : img.ID);
+                state.selectedTaskID = null;
+                renderImageList();
+                renderTaskList();
+            }
         };
+
+        item.oncontextmenu = (e) => {
+            e.preventDefault();
+            showContextMenu(e.clientX, e.clientY, [
+                { label: 'Change Image', action: () => window.ChangeImageUI(img.ID) },
+                { label: 'Delete Image', action: () => window.DeleteImage(img.ID) }
+            ]);
+        };
+
         list.appendChild(item);
     });
-}
-
-function selectImage(id) {
-    state.selectedImageID = id;
-    state.selectedTaskID = null;
-    renderImageList();
-    renderTaskList();
-
-    const img = state.images.find(i => i.ID == id);
-    const preview = document.getElementById('image-preview');
-    if (img) {
-        if (img.FullPath === "<GENERATE>") {
-            preview.innerText = 'GENERATE';
-        } else {
-            preview.innerText = img.FullPath;
-        }
-    }
 }
 
 // --- Task List ---
@@ -180,6 +364,8 @@ function renderTaskList() {
     state.tasks.forEach(task => {
         const item = document.createElement('div');
         item.className = 'list-item' + (state.selectedTaskID === task.ID ? ' selected' : '');
+        if (task.Disabled) item.style.opacity = '0.5';
+
         item.innerHTML = `
             <span style="width: 60px">${task.ImgIDs}</span>
             <span style="width: 120px">${task.Agent} ${task.Size}</span>
@@ -188,26 +374,65 @@ function renderTaskList() {
             <span style="width: 80px">$${task.Cost.toFixed(4)}</span>
             <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${task.Prompt}</span>
         `;
-        item.onclick = () => selectTask(task.ID);
+
+        item.onclick = () => {
+            state.selectedTaskID = (state.selectedTaskID === task.ID ? null : task.ID);
+            state.selectedImageID = null;
+
+            if (state.selectedTaskID) {
+                document.getElementById('editor-container').style.display = 'block';
+                document.getElementById('preview-container').style.display = 'none';
+                populateEditor(task);
+            }
+
+            renderImageList();
+            renderTaskList();
+        };
+
+        item.oncontextmenu = (e) => {
+            e.preventDefault();
+            showContextMenu(e.clientX, e.clientY, [
+                { label: task.Disabled ? 'Enable' : 'Disable', action: () => window.ToggleTaskDisabled(task.ID) },
+                { label: 'Duplicate Task', action: () => window.DuplicateTask(task.ID) },
+                { label: 'Delete Task', action: () => window.DeleteTask(task.ID) }
+            ]);
+        };
+
         list.appendChild(item);
     });
 }
 
-function selectTask(id) {
-    state.selectedTaskID = id;
-    state.selectedImageID = null;
-    renderImageList();
-    renderTaskList();
+function populateEditor(task) {
+    document.getElementById('source-ids').value = task.ImgIDs;
+    document.getElementById('prompt').value = task.Prompt;
+    document.getElementById('neg-prompt').value = task.NegativePrompt;
+    document.getElementById('tier-select').value = task.Agent + " " + task.Size;
+    document.getElementById('ratio-select').value = task.Ratio;
+    document.getElementById('cost-display').innerText = "Cost: $" + task.Cost.toFixed(4);
+}
 
-    const task = state.tasks.find(t => t.ID === id);
-    if (task) {
-        document.getElementById('source-ids').value = task.ImgIDs;
-        document.getElementById('prompt').value = task.Prompt;
-        document.getElementById('neg-prompt').value = task.NegativePrompt;
-        document.getElementById('tier-select').value = task.Agent + " " + task.Size;
-        document.getElementById('ratio-select').value = task.Ratio;
-        document.getElementById('cost-display').innerText = "Cost: $" + task.Cost.toFixed(4);
+// --- Context Menu ---
+
+function showContextMenu(x, y, items) {
+    let menu = document.getElementById('context-menu');
+    if (!menu) {
+        menu = document.createElement('div');
+        menu.id = 'context-menu';
+        menu.className = 'context-menu';
+        document.body.appendChild(menu);
     }
+
+    menu.innerHTML = '';
+    items.forEach(item => {
+        const div = document.createElement('div');
+        div.innerText = item.label;
+        div.onclick = item.action;
+        menu.appendChild(div);
+    });
+
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    menu.style.display = 'flex';
 }
 
 // --- Logs ---

@@ -15,6 +15,8 @@ export function BuildPayload(arg1:main.TaskInfo):Promise<Array<number>>;
 
 export function CalculateCost(arg1:string,arg2:string):Promise<number>;
 
+export function ChangeImageUI(arg1:string):Promise<void>;
+
 export function CheckBatchStatus(arg1:main.BatchJob):Promise<void>;
 
 export function CleanupJobsFile():Promise<void>;
@@ -27,9 +29,13 @@ export function DeleteTask(arg1:number):Promise<void>;
 
 export function DownloadBatchResults(arg1:string):Promise<void>;
 
+export function DuplicateTask(arg1:number):Promise<void>;
+
 export function GetConfig():Promise<main.Config>;
 
 export function GetCost(arg1:string,arg2:string):Promise<number>;
+
+export function GetImageBase64(arg1:string):Promise<string>;
 
 export function GetImages():Promise<Array<main.ImageInfo>>;
 
@@ -72,6 +78,8 @@ export function SubmitBatchJob(arg1:Array<main.TaskInfo>):Promise<void>;
 export function TestAPI():Promise<void>;
 
 export function TestConnection():Promise<void>;
+
+export function ToggleTaskDisabled(arg1:number):Promise<void>;
 
 export function UpdateTask(arg1:main.TaskInfo):Promise<void>;
 

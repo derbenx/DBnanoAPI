@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"encoding/base64"
 	"bufio"
 	"context"
 	"fmt"
@@ -201,6 +202,17 @@ func (a *App) AddImages(paths []string) {
 	runtime.EventsEmit(a.ctx, "images_updated")
 }
 
+func (a *App) GetImageBase64(path string) (string, error) {
+	if path == "<GENERATE>" || path == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(data), nil
+}
+
 func (a *App) SelectAndAddMultipleImages() {
 	files, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select Images",
@@ -397,6 +409,76 @@ func (a *App) DeleteTask(id int) {
 		runtime.EventsEmit(a.ctx, "tasks_updated")
 		a.Log("Task deleted.")
 	}
+}
+
+func (a *App) DuplicateTask(id int) {
+	a.Mu.Lock()
+	defer a.Mu.Unlock()
+
+	var original *TaskInfo
+	for _, t := range a.Tasks {
+		if t.ID == id {
+			original = t
+			break
+		}
+	}
+
+	if original != nil {
+		newTask := *original
+		newTask.ID = a.NextTaskID
+		a.NextTaskID++
+		newTask.Status = "Pending"
+		a.Tasks = append(a.Tasks, &newTask)
+		runtime.EventsEmit(a.ctx, "tasks_updated")
+		a.Log("Task duplicated.")
+	}
+}
+
+func (a *App) ToggleTaskDisabled(id int) {
+	a.Mu.Lock()
+	defer a.Mu.Unlock()
+
+	for _, t := range a.Tasks {
+		if t.ID == id {
+			t.Disabled = !t.Disabled
+			break
+		}
+	}
+	runtime.EventsEmit(a.ctx, "tasks_updated")
+}
+
+func (a *App) ChangeImageUI(id string) {
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Change Image",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Images", Pattern: "*.jpg;*.jpeg;*.png"},
+		},
+	})
+	if err != nil || path == "" {
+		return
+	}
+
+	a.Mu.Lock()
+	defer a.Mu.Unlock()
+
+	for _, img := range a.Images {
+		if img.ID == id {
+			img.FullPath = path
+			img.FileName = filepath.Base(path)
+			info, _ := os.Stat(path)
+			img.SizeMB = float64(info.Size()) / 1024 / 1024
+
+			// Update associated tasks
+			for _, t := range a.Tasks {
+				if t.ImgIDs == img.ID {
+					t.SourcePath = path
+				}
+			}
+			break
+		}
+	}
+	runtime.EventsEmit(a.ctx, "images_updated")
+	runtime.EventsEmit(a.ctx, "tasks_updated")
 }
 
 func (a *App) RunTasks() {

@@ -26,6 +26,10 @@ export function CalculateCost(arg1, arg2) {
   return window['go']['main']['App']['CalculateCost'](arg1, arg2);
 }
 
+export function ChangeImageUI(arg1) {
+  return window['go']['main']['App']['ChangeImageUI'](arg1);
+}
+
 export function CheckBatchStatus(arg1) {
   return window['go']['main']['App']['CheckBatchStatus'](arg1);
 }
@@ -50,12 +54,20 @@ export function DownloadBatchResults(arg1) {
   return window['go']['main']['App']['DownloadBatchResults'](arg1);
 }
 
+export function DuplicateTask(arg1) {
+  return window['go']['main']['App']['DuplicateTask'](arg1);
+}
+
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
 
 export function GetCost(arg1, arg2) {
   return window['go']['main']['App']['GetCost'](arg1, arg2);
+}
+
+export function GetImageBase64(arg1) {
+  return window['go']['main']['App']['GetImageBase64'](arg1);
 }
 
 export function GetImages() {
@@ -140,6 +152,10 @@ export function TestAPI() {
 
 export function TestConnection() {
   return window['go']['main']['App']['TestConnection']();
+}
+
+export function ToggleTaskDisabled(arg1) {
+  return window['go']['main']['App']['ToggleTaskDisabled'](arg1);
 }
 
 export function UpdateTask(arg1) {
