@@ -616,13 +616,24 @@ func (a *App) OpenImageFolder() {
 	// Ensure the directory exists
 	os.MkdirAll(abs, 0755)
 
-	// Use file:// prefix for local paths to avoid shell metacharacter issues in some environments
-	path := abs
-	if !strings.HasPrefix(path, "/") {
-		// Windows
-		path = "/" + filepath.ToSlash(path)
+	// BrowserOpenURL on some platforms might not handle file:// correctly or
+	// might be sensitive to the path format.
+	// For local folders, let's try just the absolute path first, and if that fails,
+	// use a more platform-agnostic approach.
+	// Actually, Wails BrowserOpenURL documentation says it's for URLs.
+	// For local folders, maybe we should use a different approach?
+	// On Windows: explorer <path>
+	// On Mac: open <path>
+	// On Linux: xdg-open <path>
+
+	// But Wails should handle it. Let's try to ensure it's a valid URL.
+	u := "file://" + filepath.ToSlash(abs)
+	if !strings.HasPrefix(u, "file:///") {
+		u = strings.Replace(u, "file://", "file:///", 1)
 	}
-	runtime.BrowserOpenURL(a.ctx, "file://"+path)
+
+	a.Log("Opening folder: " + abs)
+	runtime.BrowserOpenURL(a.ctx, u)
 }
 
 func (a *App) GetLastGeneratedImage(taskID int) string {
@@ -635,7 +646,14 @@ func (a *App) GetLastGeneratedImage(taskID int) string {
 }
 
 func (a *App) HasGeneratedImage(taskID int) bool {
-	return a.getLastGeneratedImagePath(taskID) != ""
+	a.Mu.RLock()
+	defer a.Mu.RUnlock()
+	for _, t := range a.Tasks {
+		if t.ID == taskID {
+			return t.LastSavedPath != ""
+		}
+	}
+	return false
 }
 
 func (a *App) getLastGeneratedImagePath(taskID int) string {

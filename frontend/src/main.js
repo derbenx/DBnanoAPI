@@ -91,6 +91,7 @@ function setupEventListeners() {
     EventsOn("images_updated", async () => {
         await refreshData();
         renderImageList();
+        updateRunButtons();
     });
     EventsOn("tasks_updated", async () => {
         await refreshData();
@@ -226,6 +227,8 @@ function setupEventListeners() {
         const parts = tier.split(" ");
         task.Agent = parts.slice(0, -1).join(" ");
         task.Size = parts[parts.length - 1];
+
+        filterRatios(task.Agent);
         task.Ratio = document.getElementById('ratio-select').value;
 
         await updateCostDisplay(task.Agent, task.Size);
@@ -271,6 +274,22 @@ function setupEventListeners() {
     document.addEventListener('click', () => {
         const menu = document.getElementById('context-menu');
         if (menu) menu.style.display = 'none';
+    });
+
+    // Tab Cycling Shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'Tab') {
+            e.preventDefault();
+            const tabs = Array.from(document.querySelectorAll('.tab'));
+            const activeIdx = tabs.findIndex(t => t.classList.contains('active'));
+            let nextIdx;
+            if (e.shiftKey) {
+                nextIdx = (activeIdx - 1 + tabs.length) % tabs.length;
+            } else {
+                nextIdx = (activeIdx + 1) % tabs.length;
+            }
+            tabs[nextIdx].click();
+        }
     });
 }
 
@@ -476,6 +495,8 @@ function renderTaskList() {
                 document.getElementById('editor-container').style.display = 'block';
                 document.getElementById('preview-container').style.display = 'none';
                 populateEditor(task);
+            } else {
+                clearEditor();
             }
 
             renderImageList();
@@ -506,14 +527,46 @@ async function populateEditor(task) {
     document.getElementById('prompt').value = task.Prompt;
     document.getElementById('neg-prompt').value = task.NegativePrompt;
     document.getElementById('tier-select').value = task.Agent + " " + task.Size;
+    filterRatios(task.Agent);
     document.getElementById('ratio-select').value = task.Ratio;
     await updateCostDisplay(task.Agent, task.Size);
 }
 
+function clearEditor() {
+    document.getElementById('source-ids').value = '';
+    document.getElementById('prompt').value = '';
+    document.getElementById('neg-prompt').value = '';
+    document.getElementById('tier-select').selectedIndex = 0;
+    filterRatios(document.getElementById('tier-select').value);
+    document.getElementById('ratio-select').selectedIndex = 0;
+    document.getElementById('cost-display').innerText = 'Immediate: $0.0000 | Batch: $0.0000';
+}
+
+function filterRatios(agent) {
+    const isNano2 = agent.includes("Nano 2");
+    const ratioSelect = document.getElementById('ratio-select');
+    const options = ratioSelect.options;
+
+    for (let i = 0; i < options.length; i++) {
+        const val = options[i].value;
+        if (val === "1:8" || val === "4:1" || val === "8:1") {
+            options[i].style.display = isNano2 ? "block" : "none";
+            if (!isNano2 && ratioSelect.value === val) {
+                ratioSelect.value = "1:1";
+            }
+        }
+    }
+}
+
 async function updateCostDisplay(agent, size) {
+    const isImagen = agent.includes("Imagen");
     const costImm = await GetCost(agent, size, "Immediate");
-    const costBatch = await GetCost(agent, size, "Batch");
-    document.getElementById('cost-display').innerText = `Immediate: $${costImm.toFixed(4)} | Batch: $${costBatch.toFixed(4)}`;
+    if (isImagen) {
+        document.getElementById('cost-display').innerText = `Immediate: \$\${costImm.toFixed(4)}`;
+    } else {
+        const costBatch = await GetCost(agent, size, "Batch");
+        document.getElementById('cost-display').innerText = `Immediate: \$\${costImm.toFixed(4)} | Batch: \$\${costBatch.toFixed(4)}`;
+    }
 }
 
 // --- Batch List ---

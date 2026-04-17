@@ -658,6 +658,10 @@ func (a *App) DownloadBatchResults(fileID string) error {
 }
 
 func (a *App) ProcessBatchItem(respBody []byte, customID string) {
+	// customID is task_{taskID}_{index}
+	var taskID int
+	fmt.Sscanf(customID, "task_%d_", &taskID)
+
 	// Nested parsing for image data
 	var resp struct {
 		Candidates []struct {
@@ -688,6 +692,15 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 				os.MkdirAll(a.Config.OutputDir, 0755)
 				os.WriteFile(outPath, data, 0644)
 				a.Log("Saved batch image: " + outPath)
+
+				a.Mu.Lock()
+				for _, t := range a.Tasks {
+					if t.ID == taskID {
+						t.LastSavedPath = outPath
+						break
+					}
+				}
+				a.Mu.Unlock()
 			}
 		}
 	}
@@ -756,6 +769,14 @@ func (a *App) SaveBase64Image(b64, mime string, taskID int) error {
 	err = os.WriteFile(outPath, data, 0644)
 	if err == nil {
 		a.Log("Saved image to: " + outPath)
+		a.Mu.Lock()
+		for _, t := range a.Tasks {
+			if t.ID == taskID {
+				t.LastSavedPath = outPath
+				break
+			}
+		}
+		a.Mu.Unlock()
 	}
 	return err
 }

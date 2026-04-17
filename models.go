@@ -61,6 +61,7 @@ type TaskInfo struct {
 	Disabled       bool
 	SourcePath     string
 	RunningCount   int
+	LastSavedPath  string
 }
 
 type BatchJob struct {
