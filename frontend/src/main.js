@@ -562,10 +562,10 @@ async function updateCostDisplay(agent, size) {
     const isImagen = agent.includes("Imagen");
     const costImm = await GetCost(agent, size, "Immediate");
     if (isImagen) {
-        document.getElementById('cost-display').innerText = `Immediate: \$\${costImm.toFixed(4)}`;
+        document.getElementById('cost-display').innerText = `Immediate: $${costImm.toFixed(4)}`;
     } else {
         const costBatch = await GetCost(agent, size, "Batch");
-        document.getElementById('cost-display').innerText = `Immediate: \$\${costImm.toFixed(4)} | Batch: \$\${costBatch.toFixed(4)}`;
+        document.getElementById('cost-display').innerText = `Immediate: $${costImm.toFixed(4)} | Batch: $${costBatch.toFixed(4)}`;
     }
 }
 

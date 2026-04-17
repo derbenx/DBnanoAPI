@@ -38,5 +38,11 @@ func (a *App) LoadSession(r io.Reader) error {
 
 	a.Images = data.Images
 	a.Tasks = data.Tasks
+	for _, t := range a.Tasks {
+		t.RunningCount = 0
+		if t.Status == "Running" {
+			t.Status = "Failed"
+		}
+	}
 	return nil
 }

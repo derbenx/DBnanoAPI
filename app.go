@@ -55,6 +55,16 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.LoadJobs()
 
+	// Reset task states on startup
+	a.Mu.Lock()
+	for _, t := range a.Tasks {
+		t.RunningCount = 0
+		if t.Status == "Running" {
+			t.Status = "Failed"
+		}
+	}
+	a.Mu.Unlock()
+
 	// Background Monitoring
 	go func() {
 		const interval = 2 * time.Minute
