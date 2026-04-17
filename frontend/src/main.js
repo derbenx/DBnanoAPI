@@ -73,6 +73,7 @@ async function refreshData() {
     }
     if (state.selectedTaskID && !state.tasks.find(t => t.ID == state.selectedTaskID)) {
         state.selectedTaskID = null;
+        clearEditor();
     }
 
     updateRunButtons();
@@ -148,7 +149,8 @@ function setupEventListeners() {
     // Control Buttons
     document.getElementById('btn-load-session').onclick = () => LoadSessionUI();
     document.getElementById('btn-save-session').onclick = () => SaveSessionUI();
-    document.getElementById('btn-run-immediate').onclick = () => {
+    document.getElementById('btn-run-immediate').onclick = (e) => {
+        e.target.disabled = true;
         RunTasks();
         addLog("Running tasks in Immediate mode...");
     };

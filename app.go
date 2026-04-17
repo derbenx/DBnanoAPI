@@ -355,9 +355,19 @@ func (a *App) AddTask(imgIDs string, agent string, size string, ratio string, pr
 func (a *App) UpdateTask(task *TaskInfo) {
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
-	for i, t := range a.Tasks {
+	for _, t := range a.Tasks {
 		if t.ID == task.ID {
-			a.Tasks[i] = task
+			// Update only editable fields
+			t.ImgIDs = task.ImgIDs
+			t.Agent = task.Agent
+			t.Size = task.Size
+			t.Ratio = task.Ratio
+			t.Prompt = task.Prompt
+			t.NegativePrompt = task.NegativePrompt
+			t.SourcePath = task.SourcePath
+
+			// Recalculate cost
+			t.Cost = a.CalculateCost(t.Agent, t.Size)
 			break
 		}
 	}
