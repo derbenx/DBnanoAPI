@@ -232,3 +232,20 @@ input[type="text"], textarea, select {
     padding-bottom: 5px;
     margin-bottom: 15px;
 }
+
+.settings-footer {
+    position: sticky;
+    bottom: -20px;
+    background-color: var(--sidebar-bg);
+    padding: 15px 20px;
+    margin: 20px -20px -20px -20px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 10;
+}
+
+#tab-settings {
+    position: relative;
+}

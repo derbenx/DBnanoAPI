@@ -5,7 +5,7 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>NanoGo Pro Editor</title>
 </head>
-<body ondrop="window.handleDrop(event)" ondragover="window.handleDragOver(event)">
+<body>
     <div id="app">
         <div class="tabs">
             <div class="tab active" data-tab="create">Create</div>
@@ -20,6 +20,7 @@
                         <span>Images</span>
                         <div class="header-btns">
                             <button onclick="window.SelectAndAddMultipleImages()">Add Images</button>
+                            <button onclick="window.OpenImageFolder()">Image Folder</button>
                             <button onclick="window.CreateNewImage()">New Image</button>
                         </div>
                     </div>
@@ -111,7 +112,11 @@
         </div>
 
         <div id="tab-batches" class="tab-content" style="display: none; height: calc(100% - 41px - 150px); overflow-y: auto; padding: 20px;">
-            <h2>Active Batch Jobs</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Active Batch Jobs</h2>
+                <div id="batch-timer-container" style="font-weight: bold; color: #3498db;">Next check in: --s</div>
+                <button onclick="window.ClearFinishedJobs()" style="background-color: #e74c3c">Clear Finished</button>
+            </div>
             <div id="batch-list"></div>
         </div>
 
@@ -211,9 +216,12 @@
                     <div class="input-field"><label>Imagen Ultra:</label><input type="text" id="settings-model-ultra"></div>
                 </div>
             </div>
-            <div style="margin-top: 20px; display: flex; gap: 10px; padding-bottom: 50px;">
+            <div class="settings-footer">
                 <button onclick="window.TestConnection()">Test API Connection</button>
-                <button onclick="window.SaveSettings()" style="background-color: #27ae60">Save All Configuration</button>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span id="settings-saved-msg" style="color: #2ecc71; opacity: 0; transition: opacity 0.3s;">Saved!</span>
+                    <button onclick="window.SaveSettings()" style="background-color: #27ae60">Save All Configuration</button>
+                </div>
             </div>
         </div>
 

@@ -490,45 +490,71 @@ func (a *App) ChangeImageUI(id string) {
 }
 
 func (a *App) RunTasks() {
-	a.Mu.RLock()
-	tasksCopy := make([]*TaskInfo, len(a.Tasks))
-	copy(tasksCopy, a.Tasks)
-	a.Mu.RUnlock()
+	a.Mu.Lock()
+	a.GlobalMode = "Immediate"
+	var tasksToRun []*TaskInfo
+	for _, t := range a.Tasks {
+		if !t.Disabled && (t.Status == "Pending" || t.Status == "Failed" || t.Status == "Success" || t.Status == "Running") {
+			tasksToRun = append(tasksToRun, t)
+		}
+	}
+	a.Mu.Unlock()
+
+	if len(tasksToRun) == 0 {
+		return
+	}
+
 	runtime.EventsEmit(a.ctx, "run_started")
 	go func() {
 		defer runtime.EventsEmit(a.ctx, "run_finished")
-		for _, task := range tasksCopy {
-			if task.Disabled || task.Status == "Running" {
-				continue
+
+		if len(tasksToRun) == 1 {
+			// If only one task, we just fire off ONE execution.
+			// The frontend button logic ensures we don't exceed 2 concurrent runs.
+			a.executeTask(tasksToRun[0])
+		} else {
+			// Multiple tasks: Run them all sequentially.
+			// We only start if no other task is already running (enforced by frontend button).
+			for _, task := range tasksToRun {
+				if task.Disabled || task.RunningCount > 0 {
+					continue
+				}
+				a.executeTask(task)
 			}
-			a.Mu.Lock()
-			task.Status = "Running"
-			a.Mu.Unlock()
-			runtime.EventsEmit(a.ctx, "tasks_updated")
-			a.Log(fmt.Sprintf("Running %s...", task.Agent))
-			err := a.RunTask(task)
-			a.Mu.Lock()
-			if err != nil {
-				task.Status = "Failed"
-				a.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
-			} else {
-				task.Status = "Success"
-			}
-			a.Mu.Unlock()
-			runtime.EventsEmit(a.ctx, "tasks_updated")
 		}
 	}()
 }
 
+func (a *App) executeTask(task *TaskInfo) {
+	a.Mu.Lock()
+	task.Status = "Running"
+	task.RunningCount++
+	a.Mu.Unlock()
+	runtime.EventsEmit(a.ctx, "tasks_updated")
+	a.Log(fmt.Sprintf("Running %s...", task.Agent))
+	err := a.RunTask(task)
+	a.Mu.Lock()
+	task.RunningCount--
+	if err != nil {
+		task.Status = "Failed"
+		a.Log(fmt.Sprintf("Task %d failed: %v", task.ID, err))
+	} else {
+		task.Status = "Success"
+	}
+	a.Mu.Unlock()
+	runtime.EventsEmit(a.ctx, "tasks_updated")
+}
+
 func (a *App) RunBatch() {
-	a.Mu.RLock()
+	a.Mu.Lock()
+	a.GlobalMode = "Batch"
 	var tasks []*TaskInfo
 	for _, t := range a.Tasks {
 		if !t.Disabled && t.Status != "Running" {
 			tasks = append(tasks, t)
 		}
 	}
-	a.Mu.RUnlock()
+	a.Mu.Unlock()
 	if len(tasks) == 0 {
 		a.Log("No tasks to batch.")
 		return

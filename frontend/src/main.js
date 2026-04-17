@@ -8,6 +8,7 @@ import {
     AddTask,
     DeleteTask,
     RunTasks,
+    RunBatch,
     SaveSessionUI,
     LoadSessionUI,
     GetConfig,
@@ -19,7 +20,11 @@ import {
     DuplicateTask,
     ToggleTaskDisabled,
     UpdateTask,
-    GetCost
+    GetCost,
+    GetLastGeneratedImage,
+    ClearFinishedJobs,
+    GetBatchJobs,
+    OpenImageFolder
 } from '../wailsjs/go/main/App';
 import { EventsOn, OnFileDrop } from '../wailsjs/runtime/runtime';
 
@@ -59,6 +64,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 async function refreshData() {
     state.images = await GetImages() || [];
     state.tasks = await GetTasks() || [];
+    state.batchJobs = await GetBatchJobs() || [];
 
     if (state.selectedImageID && !state.images.find(i => i.ID == state.selectedImageID)) {
         state.selectedImageID = null;
@@ -93,6 +99,16 @@ function setupEventListeners() {
         }
     });
 
+    EventsOn("batch_updated", async () => {
+        await refreshData();
+        renderBatchList();
+    });
+
+    EventsOn("batch_timer", (seconds) => {
+        const timerCont = document.getElementById('batch-timer-container');
+        if (timerCont) timerCont.innerText = `Next check in: ${seconds}s`;
+    });
+
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -118,8 +134,8 @@ function setupEventListeners() {
         addLog("Running tasks in Immediate mode...");
     };
     document.getElementById('btn-run-batch').onclick = () => {
+        RunBatch();
         addLog("Batch mode submission triggered.");
-        // SubmitBatchJob not bound yet but will be handled by RunTasks logic in Go if mode set
     };
 
     // Global Exposure
@@ -131,9 +147,30 @@ function setupEventListeners() {
     window.ChangeImageUI = ChangeImageUI;
     window.DuplicateTask = DuplicateTask;
     window.ToggleTaskDisabled = ToggleTaskDisabled;
+    window.OpenImageFolder = OpenImageFolder;
+    window.ShowGeneratedImage = async (id) => {
+        const b64 = await GetLastGeneratedImage(id);
+        if (b64) {
+            document.getElementById('editor-container').style.display = 'none';
+            document.getElementById('preview-container').style.display = 'flex';
+            const preview = document.getElementById('image-preview');
+            preview.innerHTML = `<img src="data:image/jpeg;base64,${b64}" class="preview-image">`;
+            state.isHoveringImage = true;
+        } else {
+            addLog("No generated image found for task " + id);
+        }
+    };
+    window.ClearFinishedJobs = async () => {
+        await ClearFinishedJobs();
+        await refreshData();
+        renderBatchList();
+    };
 
     window.AddTaskFromUI = async () => {
-        const selected = state.images.filter(img => img.Selected);
+        let selected = state.images.filter(img => img.Selected);
+        if (selected.length === 0 && state.images.length === 1) {
+            selected = [state.images[0]];
+        }
         if (selected.length === 0 && state.selectedImageID) {
             const img = state.images.find(i => i.ID == state.selectedImageID);
             if (img) selected.push(img);
@@ -204,18 +241,15 @@ function setupEventListeners() {
 
         await SaveConfig(c);
         addLog("Configuration saved to config.json");
+        const msg = document.getElementById('settings-saved-msg');
+        if (msg) {
+            msg.style.opacity = '1';
+            setTimeout(() => {
+                msg.style.opacity = '0';
+            }, 2000);
+        }
     };
 
-    // Drag and Drop
-    window.handleDragOver = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-    };
-
-    window.handleDrop = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-    };
 
     // Global click to hide context menu
     document.addEventListener('click', () => {
@@ -256,48 +290,74 @@ function updateRunButtons() {
 
     if (!immBtn || !batchBtn) return;
 
-    const activeTasks = state.tasks.filter(t => !t.Disabled && t.Status !== 'Running' && t.Status !== 'Submitted');
-    const hasTasks = activeTasks.length > 0;
+    const allEnabledTasks = state.tasks.filter(t => !t.Disabled);
+    const hasTasks = allEnabledTasks.length > 0;
+    const runningTasks = state.tasks.filter(tk => (tk.RunningCount || 0) > 0);
+    const totalRunning = runningTasks.length;
 
-    // Immediate: only works if all active tasks have NO source image IDs (Prompt only)
-    const canImmediate = hasTasks && activeTasks.every(t => !t.ImgIDs || t.ImgIDs.trim() === "");
-    immBtn.disabled = !canImmediate || state.isRunning;
+    // Immediate mode logic
+    let immLabel = "RUN IMMEDIATE";
+    let immDisabled = !hasTasks;
+
+    if (allEnabledTasks.length === 1) {
+        const t = allEnabledTasks[0];
+        const runningCount = t.RunningCount || 0;
+        immLabel = `RUN IMMEDIATE (${runningCount}/2)`;
+        if (runningCount >= 2) {
+            immDisabled = true;
+        }
+    } else if (allEnabledTasks.length > 1) {
+        // If there are multiple enabled tasks, only do one at a time.
+        if (totalRunning >= 1) {
+            immDisabled = true;
+        }
+    }
+
+    // Immediate: only works if there's a prompt. If Imagen, must have no source images.
+    const canImmediate = hasTasks && allEnabledTasks.every(t => {
+        const hasPrompt = t.Prompt && t.Prompt.trim() !== "";
+        const isImagen = t.Agent.includes("Imagen");
+        const noImages = !t.ImgIDs || t.ImgIDs.trim() === "";
+        if (isImagen && !noImages) return false;
+        return hasPrompt;
+    });
+    immBtn.disabled = immDisabled || !canImmediate;
+    immBtn.innerText = immLabel;
 
     // Batch: all tasks must have same agent and not be Imagen
     let canBatch = hasTasks;
     if (canBatch) {
-        const firstAgent = activeTasks[0].Agent;
+        const firstAgent = allEnabledTasks[0].Agent;
         if (firstAgent.includes("Imagen")) {
             canBatch = false;
         } else {
-            canBatch = activeTasks.every(t => t.Agent === firstAgent);
+            canBatch = allEnabledTasks.every(t => {
+                const hasPrompt = t.Prompt && t.Prompt.trim() !== "";
+                return t.Agent === firstAgent && hasPrompt;
+            });
         }
     }
-    batchBtn.disabled = !canBatch || state.isRunning;
+    batchBtn.disabled = !canBatch || state.isRunning || totalRunning > 0;
 }
 
 async function showPreview(id) {
+    const img = state.images.find(i => i.ID == id);
+    if (!img || img.FullPath === "" || img.FullPath === "<GENERATE>") return;
+
     state.isHoveringImage = true;
     document.getElementById('editor-container').style.display = 'none';
     document.getElementById('preview-container').style.display = 'flex';
 
-    const img = state.images.find(i => i.ID == id);
     const preview = document.getElementById('image-preview');
-    if (img) {
-        if (img.FullPath === "<GENERATE>") {
-            preview.innerText = 'GENERATE';
+    try {
+        const b64 = await GetImageBase64(img.FullPath);
+        if (b64) {
+            preview.innerHTML = `<img src="data:image/jpeg;base64,${b64}" class="preview-image">`;
         } else {
-            try {
-                const b64 = await GetImageBase64(img.FullPath);
-                if (b64) {
-                    preview.innerHTML = `<img src="data:image/jpeg;base64,${b64}" class="preview-image">`;
-                } else {
-                    preview.innerText = 'Error loading image data';
-                }
-            } catch (err) {
-                preview.innerText = 'Error: ' + err;
-            }
+            preview.innerText = 'Error loading image data';
         }
+    } catch (err) {
+        preview.innerText = 'Error: ' + err;
     }
 }
 
@@ -313,6 +373,8 @@ function renderAll() {
     if (state.activeTab === 'create') {
         renderImageList();
         renderTaskList();
+    } else if (state.activeTab === 'batches') {
+        renderBatchList();
     }
 }
 
@@ -403,6 +465,7 @@ function renderTaskList() {
             e.preventDefault();
             showContextMenu(e.clientX, e.clientY, [
                 { label: task.Disabled ? 'Enable' : 'Disable', action: () => window.ToggleTaskDisabled(task.ID) },
+                { label: 'Show Generated Image', action: () => window.ShowGeneratedImage(task.ID) },
                 { label: 'Duplicate Task', action: () => window.DuplicateTask(task.ID) },
                 { label: 'Delete Task', action: () => window.DeleteTask(task.ID) }
             ]);
@@ -419,6 +482,40 @@ function populateEditor(task) {
     document.getElementById('tier-select').value = task.Agent + " " + task.Size;
     document.getElementById('ratio-select').value = task.Ratio;
     document.getElementById('cost-display').innerText = "Cost: $" + task.Cost.toFixed(4);
+}
+
+// --- Batch List ---
+
+function renderBatchList() {
+    const list = document.getElementById('batch-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (state.batchJobs.length === 0) {
+        list.innerHTML = '<div style="padding: 20px; color: #888;">No active batch jobs.</div>';
+        return;
+    }
+
+    state.batchJobs.forEach(job => {
+        const item = document.createElement('div');
+        item.className = 'batch-item';
+        item.style = 'background-color: #151d29; border: 1px solid #34495e; padding: 15px; margin-bottom: 10px; border-radius: 8px;';
+
+        const isFinished = ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED", "Success", "Failed"].includes(job.Status);
+        const progress = isFinished ? 100 : (job.Status === "Submitted" ? 10 : 50); // Dummy progress for now as API doesn't provide it clearly in percentage
+
+        item.innerHTML = `
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span style="font-weight: bold; color: #3498db;">${job.JobID}</span>
+                <span style="color: ${isFinished ? (job.Status === 'SUCCEEDED' ? '#2ecc71' : '#e74c3c') : '#f1c40f'}">${job.Status}</span>
+            </div>
+            <div style="font-size: 0.85em; color: #888; margin-bottom: 10px;">Submitted at: ${new Date(job.SubmittedAt).toLocaleString()}</div>
+            <div class="progress-bar-bg" style="background-color: #2c3e50; height: 10px; border-radius: 5px; overflow: hidden;">
+                <div class="progress-bar-fill" style="background-color: #3498db; width: ${progress}%; height: 100%; transition: width 0.3s;"></div>
+            </div>
+        `;
+        list.appendChild(item);
+    });
 }
 
 // --- Context Menu ---
