@@ -1,14 +1,14 @@
 package main
 
 import (
-	"strings"
-	"encoding/base64"
 	"bufio"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -288,7 +288,6 @@ func (a *App) LoadSessionUI() {
 	if err := a.LoadSession(f); err != nil {
 		a.Log("Error loading session: " + err.Error())
 	} else {
-		// Update IDs to prevent collisions
 		maxImg := 0
 		for _, img := range a.Images {
 			var id int
@@ -315,8 +314,6 @@ func (a *App) LoadSessionUI() {
 
 func (a *App) AddTask(imgIDs string, agent string, size string, ratio string, prompt string, negPrompt string, paths string) {
 	a.Mu.Lock()
-
-	// Increment TaskCount for each source image
 	ids := strings.Split(imgIDs, "+")
 	for _, id := range ids {
 		id = strings.TrimSpace(id)
@@ -327,7 +324,6 @@ func (a *App) AddTask(imgIDs string, agent string, size string, ratio string, pr
 			}
 		}
 	}
-
 	newTask := &TaskInfo{
 		ID:             a.NextTaskID,
 		ImgIDs:         imgIDs,
@@ -361,7 +357,6 @@ func (a *App) UpdateTask(task *TaskInfo) {
 func (a *App) DeleteImage(id string) {
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
-
 	idx := -1
 	for i, img := range a.Images {
 		if img.ID == id {
@@ -369,10 +364,8 @@ func (a *App) DeleteImage(id string) {
 			break
 		}
 	}
-
 	if idx != -1 {
 		a.Images = append(a.Images[:idx], a.Images[idx+1:]...)
-		// Remove associated tasks
 		newTasks := []*TaskInfo{}
 		for _, t := range a.Tasks {
 			if !a.isIDInMergedID(id, t.ImgIDs) {
@@ -380,7 +373,6 @@ func (a *App) DeleteImage(id string) {
 			}
 		}
 		a.Tasks = newTasks
-
 		if len(a.Images) == 0 {
 			a.NextImageID = 1
 		}
@@ -405,7 +397,6 @@ func (a *App) isIDInMergedID(id, mID string) bool {
 func (a *App) DeleteTask(id int) {
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
-
 	idx := -1
 	for i, t := range a.Tasks {
 		if t.ID == id {
@@ -413,12 +404,9 @@ func (a *App) DeleteTask(id int) {
 			break
 		}
 	}
-
 	if idx != -1 {
 		deletedTask := a.Tasks[idx]
 		a.Tasks = append(a.Tasks[:idx], a.Tasks[idx+1:]...)
-
-		// Decrement TaskCount for each source image
 		ids := strings.Split(deletedTask.ImgIDs, "+")
 		for _, imgID := range ids {
 			imgID = strings.TrimSpace(imgID)
@@ -431,7 +419,6 @@ func (a *App) DeleteTask(id int) {
 				}
 			}
 		}
-
 		if len(a.Tasks) == 0 {
 			a.NextTaskID = 1
 		}
@@ -444,7 +431,6 @@ func (a *App) DeleteTask(id int) {
 func (a *App) DuplicateTask(id int) {
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
-
 	var original *TaskInfo
 	for _, t := range a.Tasks {
 		if t.ID == id {
@@ -452,7 +438,6 @@ func (a *App) DuplicateTask(id int) {
 			break
 		}
 	}
-
 	if original != nil {
 		newTask := *original
 		newTask.ID = a.NextTaskID
@@ -467,7 +452,6 @@ func (a *App) DuplicateTask(id int) {
 func (a *App) ToggleTaskDisabled(id int) {
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
-
 	for _, t := range a.Tasks {
 		if t.ID == id {
 			t.Disabled = !t.Disabled
@@ -480,25 +464,19 @@ func (a *App) ToggleTaskDisabled(id int) {
 func (a *App) ChangeImageUI(id string) {
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Change Image",
-		Filters: []runtime.FileFilter{
-			{DisplayName: "Images", Pattern: "*.jpg;*.jpeg;*.png"},
-		},
+		Filters: []runtime.FileFilter{{DisplayName: "Images", Pattern: "*.jpg;*.jpeg;*.png"}},
 	})
 	if err != nil || path == "" {
 		return
 	}
-
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
-
 	for _, img := range a.Images {
 		if img.ID == id {
 			img.FullPath = path
 			img.FileName = filepath.Base(path)
 			info, _ := os.Stat(path)
 			img.SizeMB = float64(info.Size()) / 1024 / 1024
-
-			// Update associated tasks
 			for _, t := range a.Tasks {
 				if t.ImgIDs == img.ID {
 					t.SourcePath = path
@@ -516,20 +494,17 @@ func (a *App) RunTasks() {
 	tasksCopy := make([]*TaskInfo, len(a.Tasks))
 	copy(tasksCopy, a.Tasks)
 	a.Mu.RUnlock()
-
+	runtime.EventsEmit(a.ctx, "run_started")
 	go func() {
-		processedCount := 0
+		defer runtime.EventsEmit(a.ctx, "run_finished")
 		for _, task := range tasksCopy {
 			if task.Disabled || task.Status == "Running" {
 				continue
 			}
-
-			processedCount++
 			a.Mu.Lock()
 			task.Status = "Running"
 			a.Mu.Unlock()
 			runtime.EventsEmit(a.ctx, "tasks_updated")
-
 			a.Log(fmt.Sprintf("Running %s...", task.Agent))
 			err := a.RunTask(task)
 			a.Mu.Lock()
@@ -542,7 +517,6 @@ func (a *App) RunTasks() {
 			a.Mu.Unlock()
 			runtime.EventsEmit(a.ctx, "tasks_updated")
 		}
-		a.Log(fmt.Sprintf("Finished processing %d jobs.", processedCount))
 	}()
 }
 
@@ -555,26 +529,22 @@ func (a *App) RunBatch() {
 		}
 	}
 	a.Mu.RUnlock()
-
 	if len(tasks) == 0 {
 		a.Log("No tasks to batch.")
 		return
 	}
-
+	runtime.EventsEmit(a.ctx, "run_started")
 	go func() {
+		defer runtime.EventsEmit(a.ctx, "run_finished")
 		err := a.SubmitBatchJob(tasks)
 		if err != nil {
 			a.Log("Batch failed: " + err.Error())
 			a.Mu.Lock()
-			for _, t := range tasks {
-				t.Status = "Failed"
-			}
+			for _, t := range tasks { t.Status = "Failed" }
 			a.Mu.Unlock()
 		} else {
 			a.Mu.Lock()
-			for _, t := range tasks {
-				t.Status = "Submitted"
-			}
+			for _, t := range tasks { t.Status = "Submitted" }
 			a.Mu.Unlock()
 		}
 		runtime.EventsEmit(a.ctx, "tasks_updated")
@@ -590,7 +560,6 @@ func (a *App) GetBatchJobs() []*BatchJob {
 func (a *App) ClearFinishedJobs() {
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
-
 	var active []*BatchJob
 	for _, j := range a.BatchJobs {
 		s := j.Status
@@ -605,34 +574,20 @@ func (a *App) ClearFinishedJobs() {
 
 func (a *App) OpenImageFolder() {
 	out := a.Config.OutputDir
-	if out == "" {
-		out = "img"
-	}
-	abs, err := filepath.Abs(out)
-	if err != nil {
-		a.Log("Error getting absolute path: " + err.Error())
-		return
-	}
-	// On Windows, explorer needs a local path. On Linux, xdg-open.
-	// Wails runtime.BrowserOpenURL works for folders too on most OSs.
+	if out == "" { out = "img" }
+	abs, _ := filepath.Abs(out)
 	runtime.BrowserOpenURL(a.ctx, abs)
 }
 
 func (a *App) GetLastGeneratedImage(taskID int) string {
 	out := a.Config.OutputDir
-	if out == "" {
-		out = "img"
-	}
+	if out == "" { out = "img" }
 	files, err := os.ReadDir(out)
-	if err != nil {
-		return ""
-	}
-
+	if err != nil { return "" }
 	var lastFile string
 	var lastTime time.Time
 	prefix := fmt.Sprintf("GoTask_%d_", taskID)
 	batchPrefix := fmt.Sprintf("Batch_task_%d_", taskID)
-
 	for _, f := range files {
 		if strings.HasPrefix(f.Name(), prefix) || strings.HasPrefix(f.Name(), batchPrefix) {
 			info, _ := f.Info()
@@ -642,11 +597,7 @@ func (a *App) GetLastGeneratedImage(taskID int) string {
 			}
 		}
 	}
-
-	if lastFile == "" {
-		return ""
-	}
-
+	if lastFile == "" { return "" }
 	b64, _ := a.GetImageBase64(lastFile)
 	return b64
 }
@@ -657,8 +608,7 @@ func (a *App) GetCost(agent, size string) float64 {
 
 func (a *App) TestConnection() {
 	go func() {
-		err := a.TestAPI()
-		if err != nil {
+		if err := a.TestAPI(); err != nil {
 			a.Log("API Test Failed: " + err.Error())
 		}
 	}()

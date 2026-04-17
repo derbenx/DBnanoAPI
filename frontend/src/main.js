@@ -30,7 +30,8 @@ let state = {
     activeTab: 'create',
     selectedImageID: null,
     selectedTaskID: null,
-    isHoveringImage: false
+    isHoveringImage: false,
+    isRunning: false
 };
 
 // --- Initialization ---
@@ -71,6 +72,14 @@ async function refreshData() {
 
 function setupEventListeners() {
     EventsOn("log", (msg) => addLog(msg));
+    EventsOn("run_started", () => {
+        state.isRunning = true;
+        updateRunButtons();
+    });
+    EventsOn("run_finished", () => {
+        state.isRunning = false;
+        updateRunButtons();
+    });
     EventsOn("images_updated", async () => {
         await refreshData();
         renderImageList();
@@ -247,11 +256,15 @@ function updateRunButtons() {
 
     if (!immBtn || !batchBtn) return;
 
-    const hasTasks = state.tasks.length > 0;
-    immBtn.disabled = !hasTasks;
+    const activeTasks = state.tasks.filter(t => !t.Disabled && t.Status !== 'Running' && t.Status !== 'Submitted');
+    const hasTasks = activeTasks.length > 0;
 
-    const activeTasks = state.tasks.filter(t => !t.Disabled);
-    let canBatch = activeTasks.length > 0;
+    // Immediate: only works if all active tasks have NO source image IDs (Prompt only)
+    const canImmediate = hasTasks && activeTasks.every(t => !t.ImgIDs || t.ImgIDs.trim() === "");
+    immBtn.disabled = !canImmediate || state.isRunning;
+
+    // Batch: all tasks must have same agent and not be Imagen
+    let canBatch = hasTasks;
     if (canBatch) {
         const firstAgent = activeTasks[0].Agent;
         if (firstAgent.includes("Imagen")) {
@@ -260,7 +273,7 @@ function updateRunButtons() {
             canBatch = activeTasks.every(t => t.Agent === firstAgent);
         }
     }
-    batchBtn.disabled = !canBatch;
+    batchBtn.disabled = !canBatch || state.isRunning;
 }
 
 async function showPreview(id) {
