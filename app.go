@@ -33,6 +33,7 @@ type App struct {
 
 	BatchMonitorIndex int
 	GlobalMode        string
+	RunningTasksTotal int
 }
 
 func NewApp() *App {
@@ -59,6 +60,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// Reset task states on startup
 	a.Mu.Lock()
+	a.RunningTasksTotal = 0
 	for _, t := range a.Tasks {
 		t.RunningCount = 0
 		if t.Status == "Running" {
@@ -341,7 +343,7 @@ func (a *App) AddTask(imgIDs string, agent string, size string, ratio string, pr
 		Size:           size,
 		Ratio:          ratio,
 		Status:         "Pending",
-		Cost:           a.CalculateCost(agent, size),
+		Cost:           a.CalculateCost(agent, size, "Immediate"),
 		Prompt:         prompt,
 		NegativePrompt: negPrompt,
 		SourcePath:     paths,
@@ -367,7 +369,7 @@ func (a *App) UpdateTask(task *TaskInfo) {
 			t.SourcePath = task.SourcePath
 
 			// Recalculate cost
-			t.Cost = a.CalculateCost(t.Agent, t.Size)
+			t.Cost = a.CalculateCost(t.Agent, t.Size, "Immediate")
 			break
 		}
 	}
@@ -463,6 +465,8 @@ func (a *App) DuplicateTask(id int) {
 		newTask.ID = a.NextTaskID
 		a.NextTaskID++
 		newTask.Status = "Pending"
+		newTask.RunningCount = 0
+		newTask.LastSavedPath = ""
 		a.Tasks = append(a.Tasks, &newTask)
 		runtime.EventsEmit(a.ctx, "tasks_updated")
 		a.Log("Task duplicated.")
@@ -511,7 +515,6 @@ func (a *App) ChangeImageUI(id string) {
 
 func (a *App) RunTasks() {
 	a.Mu.Lock()
-	a.GlobalMode = "Immediate"
 	var tasksToRun []*TaskInfo
 	for _, t := range a.Tasks {
 		if !t.Disabled && (t.Status == "Pending" || t.Status == "Failed" || t.Status == "Success" || t.Status == "Running") {
@@ -524,32 +527,71 @@ func (a *App) RunTasks() {
 		return
 	}
 
-	runtime.EventsEmit(a.ctx, "run_started")
+	a.incrementRunningTasks()
 	go func() {
-		defer runtime.EventsEmit(a.ctx, "run_finished")
-
+		defer a.decrementRunningTasks()
 		if len(tasksToRun) == 1 {
 			// If only one task, we just fire off ONE execution.
 			// The frontend button logic ensures we don't exceed 2 concurrent runs.
-			a.executeTask(tasksToRun[0])
+			a.executeTask(tasksToRun[0], "Immediate")
 		} else {
 			// Multiple tasks: Run them all sequentially.
-			// We only start if no other task is already running (enforced by frontend button).
 			for _, task := range tasksToRun {
-				if task.Disabled || task.RunningCount > 0 {
+				a.Mu.RLock()
+				isDisabled := task.Disabled
+				a.Mu.RUnlock()
+				if isDisabled {
 					continue
 				}
-				a.executeTask(task)
+				a.executeTask(task, "Immediate")
 			}
 		}
 	}()
 }
 
-func (a *App) executeTask(task *TaskInfo) {
+func (a *App) incrementRunningTasks() {
+	a.Mu.Lock()
+	a.RunningTasksTotal++
+	count := a.RunningTasksTotal
+	if count == 1 {
+		runtime.EventsEmit(a.ctx, "run_started")
+	}
+	a.Mu.Unlock()
+	a.Log(fmt.Sprintf("Global tasks running: %d", count))
+}
+
+func (a *App) decrementRunningTasks() {
+	a.Mu.Lock()
+	if a.RunningTasksTotal > 0 {
+		a.RunningTasksTotal--
+	}
+	count := a.RunningTasksTotal
+	a.Mu.Unlock()
+	a.Log(fmt.Sprintf("Global tasks running: %d", count))
+	if count == 0 {
+		runtime.EventsEmit(a.ctx, "run_finished")
+	}
+}
+
+func (a *App) ResetCounters() {
+	a.Mu.Lock()
+	a.RunningTasksTotal = 0
+	for _, t := range a.Tasks {
+		t.RunningCount = 0
+		if t.Status == "Running" {
+			t.Status = "Failed"
+		}
+	}
+	a.Mu.Unlock()
+	a.Log("All running counters reset manually.")
+	runtime.EventsEmit(a.ctx, "tasks_updated")
+	runtime.EventsEmit(a.ctx, "run_finished")
+}
+
+func (a *App) executeTask(task *TaskInfo, mode string) {
 	a.Mu.Lock()
 	task.Status = "Running"
 	task.RunningCount++
-	mode := a.GlobalMode
 	a.Mu.Unlock()
 
 	defer func() {
@@ -581,7 +623,6 @@ func (a *App) executeTask(task *TaskInfo) {
 
 func (a *App) RunBatch() {
 	a.Mu.Lock()
-	a.GlobalMode = "Batch"
 	var tasks []*TaskInfo
 	for _, t := range a.Tasks {
 		if !t.Disabled && t.Status != "Running" {
@@ -593,9 +634,9 @@ func (a *App) RunBatch() {
 		a.Log("No tasks to batch.")
 		return
 	}
-	runtime.EventsEmit(a.ctx, "run_started")
+	a.incrementRunningTasks()
 	go func() {
-		defer runtime.EventsEmit(a.ctx, "run_finished")
+		defer a.decrementRunningTasks()
 		err := a.SubmitBatchJob(tasks)
 		if err != nil {
 			a.Log("Batch failed: " + err.Error())
@@ -615,6 +656,12 @@ func (a *App) GetBatchJobs() []*BatchJob {
 	a.Mu.RLock()
 	defer a.Mu.RUnlock()
 	return a.BatchJobs
+}
+
+func (a *App) GetRunningTasksCount() int {
+	a.Mu.RLock()
+	defer a.Mu.RUnlock()
+	return a.RunningTasksTotal
 }
 
 func (a *App) ClearFinishedJobs() {
@@ -707,18 +754,7 @@ func (a *App) getLastGeneratedImagePath(taskID int) string {
 }
 
 func (a *App) GetCost(agent, size, mode string) float64 {
-	a.Mu.Lock()
-	oldMode := a.GlobalMode
-	a.GlobalMode = mode
-	a.Mu.Unlock()
-
-	cost := a.CalculateCost(agent, size)
-
-	a.Mu.Lock()
-	a.GlobalMode = oldMode
-	a.Mu.Unlock()
-
-	return cost
+	return a.CalculateCost(agent, size, mode)
 }
 
 func (a *App) TestConnection() {

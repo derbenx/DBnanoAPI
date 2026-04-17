@@ -189,3 +189,11 @@ export function UploadFile(arg1) {
 export function HasGeneratedImage(arg1) {
   return window['go']['main']['App']['HasGeneratedImage'](arg1);
 }
+
+export function GetRunningTasksCount() {
+  return window['go']['main']['App']['GetRunningTasksCount']();
+}
+
+export function ResetCounters() {
+  return window['go']['main']['App']['ResetCounters']();
+}

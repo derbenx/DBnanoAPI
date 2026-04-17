@@ -83,7 +83,7 @@ func (a *App) GetModelID(agent string) string {
 	return agent // Fallback to raw if not matched
 }
 
-func (a *App) CalculateCost(agent, size string) float64 {
+func (a *App) CalculateCost(agent, size, mode string) float64 {
 	full := agent + " " + size
 	base := 0.134 // pro 1K & pro 2k
 	nano := true
@@ -113,7 +113,7 @@ func (a *App) CalculateCost(agent, size string) float64 {
 	}
 
 	// Apply 50% discount if Batch Mode is selected
-	if a.GlobalMode == "Batch" && nano {
+	if mode == "Batch" && nano {
 		return base * 0.5
 	}
 	return base
@@ -135,12 +135,7 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 		}
 	}
 
-	a.Mu.Lock()
-	oldMode := a.GlobalMode
-	a.GlobalMode = mode
-	task.Cost = a.CalculateCost(task.Agent, task.Size)
-	a.GlobalMode = oldMode
-	a.Mu.Unlock()
+	task.Cost = a.CalculateCost(task.Agent, task.Size, mode)
 
 	modelID := a.GetModelID(task.Agent)
 
@@ -686,7 +681,8 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 					ext = "png"
 				}
 
-				fileName := fmt.Sprintf("Batch_%s_%d.%s", customID, time.Now().Unix(), ext)
+				randomHex := fmt.Sprintf("%02x", time.Now().UnixNano()%256)
+				fileName := fmt.Sprintf("Batch_%s_%d%s.%s", customID, time.Now().Unix(), randomHex, ext)
 				outPath := filepath.Join(a.Config.OutputDir, fileName)
 
 				os.MkdirAll(a.Config.OutputDir, 0755)
@@ -762,7 +758,8 @@ func (a *App) SaveBase64Image(b64, mime string, taskID int) error {
 		ext = "png"
 	}
 
-	fileName := fmt.Sprintf("GoTask_%d_%d.%s", taskID, time.Now().Unix(), ext)
+	randomHex := fmt.Sprintf("%02x", time.Now().UnixNano()%256)
+	fileName := fmt.Sprintf("GoTask_%d_%d%s.%s", taskID, time.Now().Unix(), randomHex, ext)
 	outPath := filepath.Join(a.Config.OutputDir, fileName)
 
 	os.MkdirAll(a.Config.OutputDir, 0755)

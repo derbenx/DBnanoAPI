@@ -21,6 +21,7 @@ import {
     ToggleTaskDisabled,
     UpdateTask,
     GetCost,
+    ResetCounters,
     GetLastGeneratedImage,
     HasGeneratedImage,
     ClearFinishedJobs,
@@ -56,6 +57,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
         setupEventListeners();
         await refreshData();
+        clearEditor();
         renderAll();
         addLog("Application Initialized");
     } catch (err) {
@@ -97,10 +99,6 @@ function setupEventListeners() {
     EventsOn("tasks_updated", async () => {
         await refreshData();
         renderTaskList();
-        if (state.selectedTaskID) {
-            const task = state.tasks.find(t => t.ID === state.selectedTaskID);
-            if (task) populateEditor(task);
-        }
     });
 
     EventsOn("batch_updated", async () => {
@@ -174,6 +172,7 @@ function setupEventListeners() {
     window.ChangeImageUI = ChangeImageUI;
     window.DuplicateTask = DuplicateTask;
     window.ToggleTaskDisabled = ToggleTaskDisabled;
+    window.ResetCounters = ResetCounters;
     window.OpenImageFolder = OpenImageFolder;
     window.ShowGeneratedImage = async (id) => {
         const b64 = await GetLastGeneratedImage(id);
@@ -333,25 +332,27 @@ function updateRunButtons() {
 
     if (!immBtn || !batchBtn) return;
 
-    const allEnabledTasks = state.tasks.filter(t => !t.Disabled);
-    const hasTasks = allEnabledTasks.length > 0;
     const runningTasks = state.tasks.filter(tk => (tk.RunningCount || 0) > 0);
     const totalRunning = runningTasks.length;
+    console.log(`[UI Update] state.isRunning: ${state.isRunning}, totalRunning: ${totalRunning}`);
+
+    const allEnabledTasks = state.tasks.filter(t => !t.Disabled);
+    const hasTasks = allEnabledTasks.length > 0;
 
     // Immediate mode logic
     let immLabel = "RUN IMMEDIATE";
-    let immDisabled = !hasTasks;
+    let immDisabled = !hasTasks || state.isRunning;
 
     if (allEnabledTasks.length === 1) {
         const t = allEnabledTasks[0];
         const runningCount = t.RunningCount || 0;
         immLabel = `RUN IMMEDIATE (${runningCount}/2)`;
-        if (runningCount >= 2) {
-            immDisabled = true;
-        }
+        // For single task, we allow up to 2 concurrent runs,
+        // so we ignore state.isRunning if runningCount < 2.
+        immDisabled = (runningCount >= 2);
     } else if (allEnabledTasks.length > 1) {
-        // If there are multiple enabled tasks, only do one at a time.
-        if (totalRunning >= 1) {
+        // If there are multiple enabled tasks, only do one at a time (globally).
+        if (totalRunning >= 1 || state.isRunning) {
             immDisabled = true;
         }
     }
@@ -386,7 +387,7 @@ function updateRunButtons() {
             });
         }
     }
-    batchBtn.disabled = !canBatch || state.isRunning || totalRunning > 0;
+    batchBtn.disabled = !canBatch || state.isRunning || totalRunning > 0 || (allEnabledTasks.length > 1 && totalRunning >= 1);
 }
 
 async function showPreview(id) {
@@ -448,6 +449,14 @@ function renderImageList() {
         const check = item.querySelector('.img-check');
         check.onchange = (e) => {
             img.Selected = e.target.checked;
+
+            // Auto-update Source IDs if a task is selected
+            if (state.selectedTaskID) {
+                const selectedImgs = state.images.filter(i => i.Selected).map(i => i.ID).join("+");
+                document.getElementById('source-ids').value = selectedImgs;
+                window.UpdateTaskFromUI();
+            }
+
             updateRunButtons();
         };
 
@@ -541,14 +550,15 @@ async function populateEditor(task) {
     await updateCostDisplay(task.Agent, task.Size);
 }
 
-function clearEditor() {
+async function clearEditor() {
     document.getElementById('source-ids').value = '';
     document.getElementById('prompt').value = '';
     document.getElementById('neg-prompt').value = '';
     document.getElementById('tier-select').selectedIndex = 0;
-    filterRatios(document.getElementById('tier-select').value);
+    const tier = document.getElementById('tier-select').value;
+    filterRatios(tier);
     document.getElementById('ratio-select').selectedIndex = 0;
-    document.getElementById('cost-display').innerText = 'Immediate: $0.0000 | Batch: $0.0000';
+    await updateCostDisplay(tier.split(" ").slice(0, -1).join(" "), tier.split(" ").pop());
 }
 
 function filterRatios(agent) {
