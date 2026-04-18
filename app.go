@@ -50,7 +50,6 @@ func NewApp() *App {
 		HTTPClient: &http.Client{
 			Timeout: 5 * time.Minute,
 		},
-	},
 	}
 }
 
@@ -550,7 +549,6 @@ func (a *App) RunTasks() {
 	}()
 }
 
-
 func (a *App) incrementRunningTasks(mode string) {
 	a.Mu.Lock()
 	if mode == "Batch" {
@@ -568,16 +566,6 @@ func (a *App) incrementRunningTasks(mode string) {
 	a.Mu.Unlock()
 	a.Log(fmt.Sprintf("Running tasks - Imm: %d, Batch: %d", imm, bat))
 }
-	} else {
-		a.RunningImmediate++
-		if a.RunningImmediate == 1 {
-			runtime.EventsEmit(a.ctx, "run_started")
-		}
-	}
-	imm, bat := a.RunningImmediate, a.RunningBatch
-	a.Mu.Unlock()
-	a.Log(fmt.Sprintf("Running tasks - Imm: %d, Batch: %d", imm, bat))
-}
 
 func (a *App) decrementRunningTasks(mode string) {
 	a.Mu.Lock()
@@ -585,21 +573,6 @@ func (a *App) decrementRunningTasks(mode string) {
 		if a.RunningBatch > 0 {
 			a.RunningBatch--
 		}
-		if a.RunningBatch == 0 {
-			runtime.EventsEmit(a.ctx, "batch_run_finished")
-		}
-	} else {
-		if a.RunningImmediate > 0 {
-			a.RunningImmediate--
-		}
-		if a.RunningImmediate == 0 {
-			runtime.EventsEmit(a.ctx, "run_finished")
-		}
-	}
-	imm, bat := a.RunningImmediate, a.RunningBatch
-	a.Mu.Unlock()
-	a.Log(fmt.Sprintf("Running tasks - Imm: %d, Batch: %d", imm, bat))
-}
 		if a.RunningBatch == 0 {
 			runtime.EventsEmit(a.ctx, "batch_run_finished")
 		}
@@ -715,7 +688,7 @@ func (a *App) ClearFinishedJobs() {
 	var active []*BatchJob
 	for _, j := range a.BatchJobs {
 		s := strings.ToUpper(j.Status)
-		if s != "SUCCEEDED" && s != "FAILED" && s != "CANCELLED" && s != "EXPIRED" && s != "SUCCESS" && s != "FAILED" {
+		if s != "SUCCEEDED" && s != "FAILED" && s != "CANCELLED" && s != "EXPIRED" && s != "SUCCESS" {
 			active = append(active, j)
 		}
 	}
