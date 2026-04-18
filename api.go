@@ -53,7 +53,7 @@ type InlineData struct {
 }
 
 type GenerationConfig struct {
-	CandidateCount     int          `json:"candidateCount"`
+	CandidateCount     int          `json:"candidateCount,omitempty"`
 	ResponseModalities []string     `json:"responseModalities,omitempty"`
 	Temperature        float32      `json:"temperature,omitempty"`
 	TopP               float32      `json:"topP,omitempty"`
@@ -119,8 +119,8 @@ func (a *App) CalculateCost(agent, size, mode string) float64 {
 	return base
 }
 
-func (a *App) getActiveAPIKey() string {
-	if a.Config.IsFreeMode {
+func (a *App) getAPIKey(isFree bool) string {
+	if isFree {
 		return a.Config.APIKeyFree
 	}
 	return a.Config.APIKeyPaid
@@ -145,7 +145,7 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 	task.Cost = a.CalculateCost(task.Agent, task.Size, mode)
 
 	modelID := a.GetModelID(task.Agent)
-	apiKey := a.getActiveAPIKey()
+	apiKey := a.getAPIKey(a.Config.IsFreeModeImage)
 
 	var url string
 	var reqBody []byte
@@ -204,7 +204,8 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 
 	modelName := tasks[0].Agent
 	modelID := a.GetModelID(modelName)
-	apiKey := a.getActiveAPIKey()
+	isFree := a.Config.IsFreeModeImage
+	apiKey := a.getAPIKey(isFree)
 
 	// 1. Create JSONL data
 	var buf bytes.Buffer
@@ -296,17 +297,14 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 		Status:      "Submitted",
 		SubmittedAt: time.Now(),
 		Progress:    "0%",
+		IsFree:      isFree,
 	})
 	a.Mu.Unlock()
 
 	a.Log("Batch Job Submitted: " + res.Name)
 
 	// Persist to jobs.txt
-	f, err := os.OpenFile("jobs.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		f.WriteString(res.Name + "\n")
-		f.Close()
-	}
+	a.CleanupJobsFile()
 
 	return nil
 }
@@ -551,7 +549,7 @@ func (a *App) findJSONString(data interface{}, targetKey string) string {
 }
 
 func (a *App) CheckBatchStatus(job *BatchJob) error {
-	apiKey := a.getActiveAPIKey()
+	apiKey := a.getAPIKey(job.IsFree)
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s?key=%s", job.JobID, apiKey)
 	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
@@ -595,7 +593,7 @@ func (a *App) CheckBatchStatus(job *BatchJob) error {
 
 		if respFile != "" {
 			a.Log("Batch " + job.JobID + " succeeded. Downloading results...")
-			return a.DownloadBatchResults(respFile)
+			return a.DownloadBatchResults(respFile, job.IsFree)
 		}
 	} else if state == "FAILED" || state == "CANCELLED" || state == "EXPIRED" {
 		a.CleanupJobsFile()
@@ -605,15 +603,20 @@ func (a *App) CheckBatchStatus(job *BatchJob) error {
 
 func (a *App) CleanupJobsFile() {
 	a.Mu.RLock()
-	var activeIDs []string
+	var lines []string
 	for _, job := range a.BatchJobs {
-		if job.Status != "SUCCEEDED" && job.Status != "FAILED" && job.Status != "CANCELLED" && job.Status != "EXPIRED" && job.Status != "Success" && job.Status != "Failed" {
-			activeIDs = append(activeIDs, job.JobID)
+		s := strings.ToUpper(job.Status)
+		if s != "SUCCEEDED" && s != "FAILED" && s != "CANCELLED" && s != "EXPIRED" && s != "SUCCESS" {
+			mode := "paid"
+			if job.IsFree {
+				mode = "free"
+			}
+			lines = append(lines, fmt.Sprintf("%s|%s", job.JobID, mode))
 		}
 	}
 	a.Mu.RUnlock()
 
-	if len(activeIDs) == 0 {
+	if len(lines) == 0 {
 		os.Remove("jobs.txt")
 		return
 	}
@@ -624,13 +627,13 @@ func (a *App) CleanupJobsFile() {
 	}
 	defer f.Close()
 
-	for _, id := range activeIDs {
-		f.WriteString(id + "\n")
+	for _, line := range lines {
+		f.WriteString(line + "\n")
 	}
 }
 
-func (a *App) DownloadBatchResults(fileID string) error {
-	apiKey := a.getActiveAPIKey()
+func (a *App) DownloadBatchResults(fileID string, isFree bool) error {
+	apiKey := a.getAPIKey(isFree)
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media&key=%s", fileID, apiKey)
 	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
@@ -733,7 +736,7 @@ func (a *App) CalculateChatCost(model, message string) float64 {
 }
 
 func (a *App) SendChatMessage(model, message string) (string, error) {
-	apiKey := a.getActiveAPIKey()
+	apiKey := a.getAPIKey(a.Config.IsFreeModeChat)
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
 
 	req := GeminiRequest{
@@ -741,6 +744,7 @@ func (a *App) SendChatMessage(model, message string) (string, error) {
 			Parts: []Part{{Text: message}},
 		}},
 		GenerationConfig: &GenerationConfig{
+			CandidateCount:  1,
 			Temperature:     a.Config.Temperature,
 			TopP:            a.Config.TopP,
 			TopK:            a.Config.TopK,

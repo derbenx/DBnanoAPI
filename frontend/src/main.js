@@ -191,10 +191,14 @@ function setupEventListeners() {
     window.CreateNewImage = CreateNewImage;
     window.GetDefaultConfig = GetDefaultConfig;
     window.TestConnection = (mode) => TestConnection(mode);
-    window.ToggleGlobalFreeMode = async (enabled) => {
-        state.config.is_free_mode = enabled;
+    window.ToggleFreeMode = async (type, enabled) => {
+        if (type === 'image') {
+            state.config.is_free_mode_image = enabled;
+        } else {
+            state.config.is_free_mode_chat = enabled;
+        }
         await SaveConfig(state.config);
-        addLog(`Free Mode ${enabled ? 'Enabled' : 'Disabled'}`);
+        addLog(`Free Mode (${type}) ${enabled ? 'Enabled' : 'Disabled'}`);
     };
     window.ResetToDefault = async (field) => {
         const def = await GetDefaultConfig();
@@ -397,7 +401,8 @@ function populateSettings(c) {
     if (!c) return;
     document.getElementById('settings-api-key-paid').value = c.api_key_paid || '';
     document.getElementById('settings-api-key-free').value = c.api_key_free || '';
-    document.getElementById('global-free-mode').checked = !!c.is_free_mode;
+    document.getElementById('image-free-mode').checked = !!c.is_free_mode_image;
+    document.getElementById('chat-free-mode').checked = !!c.is_free_mode_chat;
     document.getElementById('settings-output-dir').value = c.output_dir || '';
     document.getElementById('settings-debug').checked = !!c.debug;
     document.getElementById('settings-encourage-gen').value = c.encourage_gen || '';
@@ -724,7 +729,7 @@ function renderBatchList() {
         item.innerHTML = `
             <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                 <span style="font-weight: bold; color: #3498db;">${job.JobID}</span>
-                <span style="color: ${isFinished ? (job.Status === 'SUCCEEDED' ? '#2ecc71' : '#e74c3c') : '#f1c40f'}\">${job.Status}</span>
+                <span style="color: ${isFinished ? (job.Status === 'SUCCEEDED' ? '#2ecc71' : '#e74c3c') : '#f1c40f'}">${job.Status}</span>
             </div>
             <div style="font-size: 0.85em; color: #888; margin-bottom: 10px;">Submitted at: ${new Date(job.SubmittedAt).toLocaleString()}</div>
             <div class="progress-bar-bg" style="background-color: #2c3e50; height: 10px; border-radius: 5px; overflow: hidden;">

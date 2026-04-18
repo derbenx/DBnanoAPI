@@ -119,7 +119,8 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		ChatModelList:    strings.Join(chatModels, "\n"),
-		IsFreeMode:       false,
+		IsFreeModeImage:  false,
+		IsFreeModeChat:   false,
 		OutputDir:        "img",
 		DefaultPrompt:    "everyone stands on top of a large pile of burgers. the burgers deform under load.",
 		DefaultNegPrompt: "distorted faces, blurry, distortion, low quality, watermarks, missing limbs, extra limbs, deformities, floating people or objects, cropping body parts",

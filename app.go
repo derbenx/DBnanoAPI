@@ -183,15 +183,22 @@ func (a *App) LoadJobs() {
 	a.Mu.Lock()
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		id := scanner.Text()
-		if id == "" {
+		line := scanner.Text()
+		if line == "" {
 			continue
+		}
+		parts := strings.Split(line, "|")
+		id := parts[0]
+		isFree := false
+		if len(parts) > 1 && parts[1] == "free" {
+			isFree = true
 		}
 		a.BatchJobs = append(a.BatchJobs, &BatchJob{
 			JobID:       id,
 			Status:      "Submitted",
 			SubmittedAt: time.Now(),
 			Progress:    "0%",
+			IsFree:      isFree,
 		})
 	}
 	count := len(a.BatchJobs)

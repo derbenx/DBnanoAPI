@@ -7,18 +7,12 @@
 </head>
 <body>
     <div id="app">
-        <div class="tabs" style="display: flex; justify-content: space-between; align-items: center; padding-right: 20px;">
-            <div style="display: flex;">
-                <div class="tab active" data-tab="create">Create</div>
-                <div class="tab" data-tab="batches">Batches</div>
-                <div class="tab" data-tab="settings">Settings</div>
-                <div class="tab" data-tab="chat">Chat</div>
-                <div class="tab" data-tab="help">Help</div>
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.85em;">
-                <label style="font-weight: bold; color: #f1c40f;">Free Mode:</label>
-                <input type="checkbox" id="global-free-mode" onchange="window.ToggleGlobalFreeMode(this.checked)">
-            </div>
+        <div class="tabs">
+            <div class="tab active" data-tab="create">Create</div>
+            <div class="tab" data-tab="batches">Batches</div>
+            <div class="tab" data-tab="settings">Settings</div>
+            <div class="tab" data-tab="chat">Chat</div>
+            <div class="tab" data-tab="help">Help</div>
         </div>
 
         <div id="tab-create" class="tab-content main-content">
@@ -59,6 +53,10 @@
                     <button id="btn-load-session">Load Session</button>
                     <button id="btn-save-session">Save Session</button>
                     <div style="flex: 1"></div>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-right: 20px; font-size: 0.85em;">
+                        <label style="font-weight: bold; color: #f1c40f;">Free Mode:</label>
+                        <input type="checkbox" id="image-free-mode" onchange="window.ToggleFreeMode('image', this.checked)">
+                    </div>
                     <button id="btn-run-immediate" style="background-color: #27ae60">RUN IMMEDIATE</button>
                     <button id="btn-run-batch" style="background-color: #8e44ad">RUN BATCH</button>
                 </div>
@@ -135,9 +133,15 @@
         <div id="tab-chat" class="tab-content" style="display: none; height: calc(100% - 41px - 150px); flex-direction: column; padding: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h2>Chat with AI</h2>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <label>Agent:</label>
-                    <select id="chat-agent-select" style="min-width: 200px;"></select>
+                <div style="display: flex; align-items: center; gap: 20px;">
+                    <div style="display: flex; align-items: center; gap: 10px; font-size: 0.85em;">
+                        <label style="font-weight: bold; color: #f1c40f;">Free Mode:</label>
+                        <input type="checkbox" id="chat-free-mode" onchange="window.ToggleFreeMode('chat', this.checked)">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label>Agent:</label>
+                        <select id="chat-agent-select" style="min-width: 200px;"></select>
+                    </div>
                 </div>
             </div>
 
