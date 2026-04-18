@@ -8,7 +8,10 @@ type SafetySetting struct {
 }
 
 type Config struct {
-	APIKey           string          `json:"api_key"`
+	APIKeyPaid       string          `json:"api_key_paid"`
+	APIKeyFree       string          `json:"api_key_free"`
+	IsFreeMode       bool            `json:"is_free_mode"`
+	ChatModelList    string          `json:"chat_model_list"`
 	OutputDir        string          `json:"output_dir"`
 	DefaultPrompt    string          `json:"default_prompt"`
 	DefaultNegPrompt string          `json:"default_neg_prompt"`

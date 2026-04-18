@@ -119,6 +119,13 @@ func (a *App) CalculateCost(agent, size, mode string) float64 {
 	return base
 }
 
+func (a *App) getActiveAPIKey() string {
+	if a.Config.IsFreeMode {
+		return a.Config.APIKeyFree
+	}
+	return a.Config.APIKeyPaid
+}
+
 func (a *App) RunTask(task *TaskInfo, mode string) error {
 	// Validate Prompt
 	if strings.TrimSpace(task.Prompt) == "" {
@@ -138,16 +145,17 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 	task.Cost = a.CalculateCost(task.Agent, task.Size, mode)
 
 	modelID := a.GetModelID(task.Agent)
+	apiKey := a.getActiveAPIKey()
 
 	var url string
 	var reqBody []byte
 	var err error
 
 	if strings.Contains(task.Agent, "Imagen") {
-		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:predict?key=%s", modelID, a.Config.APIKey)
+		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:predict?key=%s", modelID, apiKey)
 		reqBody, err = a.BuildImagenPayload(task)
 	} else {
-		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", modelID, a.Config.APIKey)
+		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", modelID, apiKey)
 		reqBody, err = a.BuildPayload(task)
 	}
 
@@ -196,6 +204,7 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 
 	modelName := tasks[0].Agent
 	modelID := a.GetModelID(modelName)
+	apiKey := a.getActiveAPIKey()
 
 	// 1. Create JSONL data
 	var buf bytes.Buffer
@@ -237,7 +246,7 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 	}
 
 	// 2. Upload JSONL to Google Files API
-	fileURI, err := a.UploadFile(buf.Bytes())
+	fileURI, err := a.UploadFile(buf.Bytes(), apiKey)
 	if err != nil {
 		return fmt.Errorf("upload failed: %v", err)
 	}
@@ -249,7 +258,7 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 		resourceName = "files/" + parts[len(parts)-1]
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchGenerateContent?key=%s", modelID, a.Config.APIKey)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchGenerateContent?key=%s", modelID, apiKey)
 
 	type BatchSubmitReq struct {
 		Batch struct {
@@ -302,8 +311,8 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 	return nil
 }
 
-func (a *App) UploadFile(data []byte) (string, error) {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/upload/v1beta/files?key=%s", a.Config.APIKey)
+func (a *App) UploadFile(data []byte, apiKey string) (string, error) {
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/upload/v1beta/files?key=%s", apiKey)
 
 	boundary := "NanoGoBoundary" + fmt.Sprint(time.Now().Unix())
 	body := &bytes.Buffer{}
@@ -469,8 +478,12 @@ func (a *App) HandleError(body []byte, status int) error {
 	return fmt.Errorf("HTTP Error %d: %s", status, bodyStr)
 }
 
-func (a *App) TestAPI() error {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", a.Config.APIKey)
+func (a *App) TestAPI(mode string) error {
+	apiKey := a.Config.APIKeyPaid
+	if mode == "free" {
+		apiKey = a.Config.APIKeyFree
+	}
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", apiKey)
 	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
 		return err
@@ -538,7 +551,8 @@ func (a *App) findJSONString(data interface{}, targetKey string) string {
 }
 
 func (a *App) CheckBatchStatus(job *BatchJob) error {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s?key=%s", job.JobID, a.Config.APIKey)
+	apiKey := a.getActiveAPIKey()
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s?key=%s", job.JobID, apiKey)
 	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
 		return err
@@ -616,7 +630,8 @@ func (a *App) CleanupJobsFile() {
 }
 
 func (a *App) DownloadBatchResults(fileID string) error {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media&key=%s", fileID, a.Config.APIKey)
+	apiKey := a.getActiveAPIKey()
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media&key=%s", fileID, apiKey)
 	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
 		return err
@@ -700,6 +715,71 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 			}
 		}
 	}
+}
+
+func (a *App) CalculateChatCost(model, message string) float64 {
+	// Simple estimation: $1 per 1 million tokens for simplicity, or something similar
+	// Flash models are usually $0.10 / 1M input.
+	// We'll use a conservative estimate.
+	tokens := len(message) / 4 // Very rough estimate
+	if tokens < 1 {
+		tokens = 1
+	}
+	pricePer1K := 0.000125 // conservative
+	if strings.Contains(model, "pro") {
+		pricePer1K = 0.00125
+	}
+	return (float64(tokens) / 1000.0) * pricePer1K
+}
+
+func (a *App) SendChatMessage(model, message string) (string, error) {
+	apiKey := a.getActiveAPIKey()
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
+
+	req := GeminiRequest{
+		Contents: []Content{{
+			Parts: []Part{{Text: message}},
+		}},
+		GenerationConfig: &GenerationConfig{
+			Temperature:     a.Config.Temperature,
+			TopP:            a.Config.TopP,
+			TopK:            a.Config.TopK,
+			MaxOutputTokens: a.Config.MaxOutputTokens,
+		},
+		SafetySettings: a.Config.SafetySettings,
+	}
+
+	reqBody, _ := json.Marshal(req)
+	resp, err := a.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return "", a.HandleError(body, resp.StatusCode)
+	}
+
+	var geminiResp struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+
+	if err := json.Unmarshal(body, &geminiResp); err != nil {
+		return "", err
+	}
+
+	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
+		return geminiResp.Candidates[0].Content.Parts[0].Text, nil
+	}
+
+	return "", fmt.Errorf("no response text from AI")
 }
 
 func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {

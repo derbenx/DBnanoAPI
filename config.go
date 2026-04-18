@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const configFileName = "config.json"
@@ -29,8 +30,22 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	// Fill in defaults for missing fields to handle upgrades and missing files
+	// Migration and Fill in defaults
 	def := DefaultConfig()
+
+	// Handle migration from old APIKey if APIKeyPaid is empty
+	var raw map[string]interface{}
+	json.Unmarshal(data, &raw)
+	if cfg.APIKeyPaid == "" {
+		if oldKey, ok := raw["api_key"].(string); ok && oldKey != "" {
+			cfg.APIKeyPaid = oldKey
+		}
+	}
+
+	if cfg.ChatModelList == "" {
+		cfg.ChatModelList = def.ChatModelList
+	}
+
 	if cfg.SafetySettings == nil {
 		cfg.SafetySettings = def.SafetySettings
 	}
@@ -76,7 +91,35 @@ func SaveConfig(cfg *Config) error {
 }
 
 func DefaultConfig() *Config {
+	chatModels := []string{
+		"gemini-2.5-flash",
+		"gemini-2.5-pro",
+		"gemini-2.0-flash",
+		"gemini-2.0-flash-001",
+		"gemini-2.0-flash-lite-001",
+		"gemini-2.0-flash-lite",
+		"gemma-3-1b-it",
+		"gemma-3-4b-it",
+		"gemma-3-12b-it",
+		"gemma-3-27b-it",
+		"gemma-3n-e4b-it",
+		"gemma-3n-e2b-it",
+		"gemma-4-26b-a4b-it",
+		"gemma-4-31b-it",
+		"gemini-flash-latest",
+		"gemini-flash-lite-latest",
+		"gemini-pro-latest",
+		"gemini-2.5-flash-lite",
+		"gemini-3-pro-preview",
+		"gemini-3-flash-preview",
+		"gemini-3.1-pro-preview",
+		"gemini-3.1-pro-preview-customtools",
+		"gemini-3.1-flash-lite-preview",
+	}
+
 	return &Config{
+		ChatModelList:    strings.Join(chatModels, "\n"),
+		IsFreeMode:       false,
 		OutputDir:        "img",
 		DefaultPrompt:    "everyone stands on top of a large pile of burgers. the burgers deform under load.",
 		DefaultNegPrompt: "distorted faces, blurry, distortion, low quality, watermarks, missing limbs, extra limbs, deformities, floating people or objects, cropping body parts",

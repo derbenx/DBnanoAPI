@@ -123,6 +123,10 @@ func (a *App) GetConfig() *Config {
 	return a.Config
 }
 
+func (a *App) GetDefaultConfig() *Config {
+	return DefaultConfig()
+}
+
 func (a *App) SaveConfig(cfg *Config) error {
 	a.Mu.Lock()
 	a.Config = cfg
@@ -775,10 +779,10 @@ func (a *App) GetCost(agent, size, mode string) float64 {
 	return a.CalculateCost(agent, size, mode)
 }
 
-func (a *App) TestConnection() {
+func (a *App) TestConnection(mode string) {
 	go func() {
 		runtime.EventsEmit(a.ctx, "test_api_started")
-		if err := a.TestAPI(); err != nil {
+		if err := a.TestAPI(mode); err != nil {
 			a.Log("API Test Failed: " + err.Error())
 			runtime.EventsEmit(a.ctx, "test_api_finished", false, err.Error())
 		} else {

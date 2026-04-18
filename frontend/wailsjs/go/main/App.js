@@ -22,8 +22,12 @@ export function BuildPayload(arg1) {
   return window['go']['main']['App']['BuildPayload'](arg1);
 }
 
-export function CalculateCost(arg1, arg2) {
-  return window['go']['main']['App']['CalculateCost'](arg1, arg2);
+export function CalculateChatCost(arg1, arg2) {
+  return window['go']['main']['App']['CalculateChatCost'](arg1, arg2);
+}
+
+export function CalculateCost(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CalculateCost'](arg1, arg2, arg3);
 }
 
 export function ChangeImageUI(arg1) {
@@ -72,6 +76,10 @@ export function GetConfig() {
 
 export function GetCost(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetCost'](arg1, arg2, arg3);
+}
+
+export function GetDefaultConfig() {
+  return window['go']['main']['App']['GetDefaultConfig']();
 }
 
 export function GetImageBase64(arg1) {
@@ -162,16 +170,20 @@ export function SelectAndAddMultipleImages() {
   return window['go']['main']['App']['SelectAndAddMultipleImages']();
 }
 
+export function SendChatMessage(arg1, arg2) {
+  return window['go']['main']['App']['SendChatMessage'](arg1, arg2);
+}
+
 export function SubmitBatchJob(arg1) {
   return window['go']['main']['App']['SubmitBatchJob'](arg1);
 }
 
-export function TestAPI() {
-  return window['go']['main']['App']['TestAPI']();
+export function TestAPI(arg1) {
+  return window['go']['main']['App']['TestAPI'](arg1);
 }
 
-export function TestConnection() {
-  return window['go']['main']['App']['TestConnection']();
+export function TestConnection(arg1) {
+  return window['go']['main']['App']['TestConnection'](arg1);
 }
 
 export function ToggleTaskDisabled(arg1) {
@@ -182,8 +194,8 @@ export function UpdateTask(arg1) {
   return window['go']['main']['App']['UpdateTask'](arg1);
 }
 
-export function UploadFile(arg1) {
-  return window['go']['main']['App']['UploadFile'](arg1);
+export function UploadFile(arg1, arg2) {
+  return window['go']['main']['App']['UploadFile'](arg1, arg2);
 }
 
 export function HasGeneratedImage(arg1) {
