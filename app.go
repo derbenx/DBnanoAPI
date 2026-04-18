@@ -32,8 +32,8 @@ type App struct {
 	NextTaskID  int
 
 	BatchMonitorIndex int
-	GlobalMode        string
-	RunningTasksTotal int
+	RunningImmediate  int
+	RunningBatch      int
 }
 
 func NewApp() *App {
@@ -47,10 +47,10 @@ func NewApp() *App {
 		Config:      cfg,
 		NextImageID: 1,
 		NextTaskID:  1,
-		GlobalMode:  "Immediate",
 		HTTPClient: &http.Client{
 			Timeout: 5 * time.Minute,
 		},
+	},
 	}
 }
 
@@ -60,7 +60,8 @@ func (a *App) startup(ctx context.Context) {
 
 	// Reset task states on startup
 	a.Mu.Lock()
-	a.RunningTasksTotal = 0
+	a.RunningImmediate = 0
+	a.RunningBatch = 0
 	for _, t := range a.Tasks {
 		t.RunningCount = 0
 		if t.Status == "Running" {
@@ -527,9 +528,9 @@ func (a *App) RunTasks() {
 		return
 	}
 
-	a.incrementRunningTasks()
+	a.incrementRunningTasks("Immediate")
 	go func() {
-		defer a.decrementRunningTasks()
+		defer a.decrementRunningTasks("Immediate")
 		if len(tasksToRun) == 1 {
 			// If only one task, we just fire off ONE execution.
 			// The frontend button logic ensures we don't exceed 2 concurrent runs.
@@ -549,33 +550,76 @@ func (a *App) RunTasks() {
 	}()
 }
 
-func (a *App) incrementRunningTasks() {
+
+func (a *App) incrementRunningTasks(mode string) {
 	a.Mu.Lock()
-	a.RunningTasksTotal++
-	count := a.RunningTasksTotal
-	if count == 1 {
-		runtime.EventsEmit(a.ctx, "run_started")
+	if mode == "Batch" {
+		a.RunningBatch++
+		if a.RunningBatch == 1 {
+			runtime.EventsEmit(a.ctx, "batch_run_started")
+		}
+	} else {
+		a.RunningImmediate++
+		if a.RunningImmediate == 1 {
+			runtime.EventsEmit(a.ctx, "run_started")
+		}
 	}
+	imm, bat := a.RunningImmediate, a.RunningBatch
 	a.Mu.Unlock()
-	a.Log(fmt.Sprintf("Global tasks running: %d", count))
+	a.Log(fmt.Sprintf("Running tasks - Imm: %d, Batch: %d", imm, bat))
+}
+	} else {
+		a.RunningImmediate++
+		if a.RunningImmediate == 1 {
+			runtime.EventsEmit(a.ctx, "run_started")
+		}
+	}
+	imm, bat := a.RunningImmediate, a.RunningBatch
+	a.Mu.Unlock()
+	a.Log(fmt.Sprintf("Running tasks - Imm: %d, Batch: %d", imm, bat))
 }
 
-func (a *App) decrementRunningTasks() {
+func (a *App) decrementRunningTasks(mode string) {
 	a.Mu.Lock()
-	if a.RunningTasksTotal > 0 {
-		a.RunningTasksTotal--
+	if mode == "Batch" {
+		if a.RunningBatch > 0 {
+			a.RunningBatch--
+		}
+		if a.RunningBatch == 0 {
+			runtime.EventsEmit(a.ctx, "batch_run_finished")
+		}
+	} else {
+		if a.RunningImmediate > 0 {
+			a.RunningImmediate--
+		}
+		if a.RunningImmediate == 0 {
+			runtime.EventsEmit(a.ctx, "run_finished")
+		}
 	}
-	count := a.RunningTasksTotal
+	imm, bat := a.RunningImmediate, a.RunningBatch
 	a.Mu.Unlock()
-	a.Log(fmt.Sprintf("Global tasks running: %d", count))
-	if count == 0 {
-		runtime.EventsEmit(a.ctx, "run_finished")
+	a.Log(fmt.Sprintf("Running tasks - Imm: %d, Batch: %d", imm, bat))
+}
+		if a.RunningBatch == 0 {
+			runtime.EventsEmit(a.ctx, "batch_run_finished")
+		}
+	} else {
+		if a.RunningImmediate > 0 {
+			a.RunningImmediate--
+		}
+		if a.RunningImmediate == 0 {
+			runtime.EventsEmit(a.ctx, "run_finished")
+		}
 	}
+	imm, bat := a.RunningImmediate, a.RunningBatch
+	a.Mu.Unlock()
+	a.Log(fmt.Sprintf("Running tasks - Imm: %d, Batch: %d", imm, bat))
 }
 
 func (a *App) ResetCounters() {
 	a.Mu.Lock()
-	a.RunningTasksTotal = 0
+	a.RunningImmediate = 0
+	a.RunningBatch = 0
 	for _, t := range a.Tasks {
 		t.RunningCount = 0
 		if t.Status == "Running" {
@@ -586,6 +630,7 @@ func (a *App) ResetCounters() {
 	a.Log("All running counters reset manually.")
 	runtime.EventsEmit(a.ctx, "tasks_updated")
 	runtime.EventsEmit(a.ctx, "run_finished")
+	runtime.EventsEmit(a.ctx, "batch_run_finished")
 }
 
 func (a *App) executeTask(task *TaskInfo, mode string) {
@@ -634,9 +679,9 @@ func (a *App) RunBatch() {
 		a.Log("No tasks to batch.")
 		return
 	}
-	a.incrementRunningTasks()
+	a.incrementRunningTasks("Batch")
 	go func() {
-		defer a.decrementRunningTasks()
+		defer a.decrementRunningTasks("Batch")
 		err := a.SubmitBatchJob(tasks)
 		if err != nil {
 			a.Log("Batch failed: " + err.Error())
@@ -661,7 +706,7 @@ func (a *App) GetBatchJobs() []*BatchJob {
 func (a *App) GetRunningTasksCount() int {
 	a.Mu.RLock()
 	defer a.Mu.RUnlock()
-	return a.RunningTasksTotal
+	return a.RunningImmediate + a.RunningBatch
 }
 
 func (a *App) ClearFinishedJobs() {
@@ -669,8 +714,8 @@ func (a *App) ClearFinishedJobs() {
 	defer a.Mu.Unlock()
 	var active []*BatchJob
 	for _, j := range a.BatchJobs {
-		s := j.Status
-		if s != "SUCCEEDED" && s != "FAILED" && s != "CANCELLED" && s != "EXPIRED" && s != "Success" && s != "Failed" {
+		s := strings.ToUpper(j.Status)
+		if s != "SUCCEEDED" && s != "FAILED" && s != "CANCELLED" && s != "EXPIRED" && s != "SUCCESS" && s != "FAILED" {
 			active = append(active, j)
 		}
 	}

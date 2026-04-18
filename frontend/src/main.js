@@ -38,7 +38,8 @@ let state = {
     selectedImageID: null,
     selectedTaskID: null,
     isHoveringImage: false,
-    isRunning: false
+    isRunning: false,
+    isBatchRunning: false
 };
 
 // --- Initialization ---
@@ -83,12 +84,20 @@ async function refreshData() {
 
 function setupEventListeners() {
     EventsOn("log", (msg) => addLog(msg));
-    EventsOn("run_started", () => {
+        EventsOn("run_started", () => {
         state.isRunning = true;
         updateRunButtons();
     });
     EventsOn("run_finished", () => {
         state.isRunning = false;
+        updateRunButtons();
+    });
+    EventsOn("batch_run_started", () => {
+        state.isBatchRunning = true;
+        updateRunButtons();
+    });
+    EventsOn("batch_run_finished", () => {
+        state.isBatchRunning = false;
         updateRunButtons();
     });
     EventsOn("images_updated", async () => {
@@ -332,49 +341,46 @@ function updateRunButtons() {
 
     if (!immBtn || !batchBtn) return;
 
-    const runningTasks = state.tasks.filter(tk => (tk.RunningCount || 0) > 0);
-    const totalRunning = runningTasks.length;
-    console.log(`[UI Update] state.isRunning: ${state.isRunning}, totalRunning: ${totalRunning}`);
-
     const allEnabledTasks = state.tasks.filter(t => !t.Disabled);
     const hasTasks = allEnabledTasks.length > 0;
 
-    // Immediate mode logic
+    // Immediate mode tracking
+    const runningImmediateTasks = state.tasks.filter(tk => (tk.RunningCount || 0) > 0);
+    const immRunningCount = runningImmediateTasks.length;
+
+    console.log(`[UI Update] isRunning (Imm): ${state.isRunning}, isBatchRunning: ${state.isBatchRunning}, immRunningTasks: ${immRunningCount}`);
+
+    // Immediate button logic
     let immLabel = "RUN IMMEDIATE";
-    let immDisabled = !hasTasks || state.isRunning;
+    let immDisabled = !hasTasks;
 
     if (allEnabledTasks.length === 1) {
         const t = allEnabledTasks[0];
-        const runningCount = t.RunningCount || 0;
-        immLabel = `RUN IMMEDIATE (${runningCount}/2)`;
-        // For single task, we allow up to 2 concurrent runs,
-        // so we ignore state.isRunning if runningCount < 2.
-        immDisabled = (runningCount >= 2);
+        const taskRunningCount = t.RunningCount || 0;
+        immLabel = `RUN IMMEDIATE (${taskRunningCount}/2)`;
+        // If only one task, we allow up to 2 concurrent runs for it.
+        immDisabled = (taskRunningCount >= 2);
     } else if (allEnabledTasks.length > 1) {
-        // If there are multiple enabled tasks, only do one at a time (globally).
-        if (totalRunning >= 1 || state.isRunning) {
+        // If multiple tasks, only one immediate task allowed at a time.
+        if (state.isRunning) {
             immDisabled = true;
         }
     }
 
-    // Immediate: only works if there's a prompt. If Imagen, must have no source images OR only "GENERATE" images.
     const canImmediate = hasTasks && allEnabledTasks.every(t => {
         const hasPrompt = t.Prompt && t.Prompt.trim() !== "";
         const isImagen = t.Agent.includes("Imagen");
-
-        // Find image objects for IDs in t.ImgIDs
         const ids = (t.ImgIDs || "").split("+").map(id => id.trim()).filter(id => id !== "");
         const taskImages = state.images.filter(img => ids.includes(img.ID));
         const onlyGenerate = taskImages.length > 0 && taskImages.every(img => img.FullPath === "<GENERATE>");
         const noImages = ids.length === 0;
-
         if (isImagen && !(noImages || onlyGenerate)) return false;
         return hasPrompt;
     });
     immBtn.disabled = immDisabled || !canImmediate;
     immBtn.innerText = immLabel;
 
-    // Batch: all tasks must have same agent and not be Imagen
+    // Batch button logic
     let canBatch = hasTasks;
     if (canBatch) {
         const firstAgent = allEnabledTasks[0].Agent;
@@ -387,7 +393,7 @@ function updateRunButtons() {
             });
         }
     }
-    batchBtn.disabled = !canBatch || state.isRunning || totalRunning > 0 || (allEnabledTasks.length > 1 && totalRunning >= 1);
+    batchBtn.disabled = !canBatch || state.isBatchRunning;
 }
 
 async function showPreview(id) {
