@@ -11,6 +11,8 @@
             <div class="tab active" data-tab="create">Create</div>
             <div class="tab" data-tab="batches">Batches</div>
             <div class="tab" data-tab="settings">Settings</div>
+            <div class="tab" data-tab="chat">Chat</div>
+            <div class="tab" data-tab="help">Help</div>
         </div>
 
         <div id="tab-create" class="tab-content main-content">
@@ -19,8 +21,8 @@
                     <div class="panel-header">
                         <span>Images</span>
                         <div class="header-btns">
-                            <button onclick="window.SelectAndAddMultipleImages()">Add Images</button>
                             <button onclick="window.OpenImageFolder()">Image Folder</button>
+                            <button onclick="window.SelectAndAddMultipleImages()">Add Images</button>
                             <button onclick="window.CreateNewImage()">New Image</button>
                         </div>
                     </div>
@@ -117,6 +119,18 @@
                 <button onclick="window.ClearFinishedJobs()" style="background-color: #e74c3c">Clear Finished</button>
             </div>
             <div id="batch-list"></div>
+        </div>
+        <div id="tab-help" class="tab-content" style="display: none; height: calc(100% - 41px - 150px); overflow-y: auto; padding: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Help</h2>
+            </div>
+            help stuff goes here!
+        </div>
+        <div id="tab-chat" class="tab-content" style="display: none; height: calc(100% - 41px - 150px); overflow-y: auto; padding: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Chat with AI</h2>
+            </div>
+            chat stuff goes here!
         </div>
 
         <div id="tab-settings" class="tab-content" style="display: none; height: calc(100% - 41px); overflow-y: auto; padding: 20px;">
@@ -219,7 +233,6 @@
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <button onclick="window.TestConnection()">Test API Connection</button>
                     <span id="test-api-status" style="font-weight: bold; font-size: 0.9em;"></span>
-                    <button onclick="window.ResetCounters()" style="background-color: #f39c12">Reset Counter</button>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <span id="settings-saved-msg" style="color: #2ecc71; opacity: 0; transition: opacity 0.3s;">Saved!</span>
