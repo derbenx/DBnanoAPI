@@ -525,19 +525,27 @@ func (a *App) ChangeImageUI(id string) {
 }
 
 func (a *App) RunTasks() {
+	a.Log("RunTasks: Starting execution check")
 	a.Mu.Lock()
 	var tasksToRun []*TaskInfo
+	a.Log(fmt.Sprintf("RunTasks: Total tasks in memory: %d", len(a.Tasks)))
 	for _, t := range a.Tasks {
-		if !t.Disabled && (t.Status == "Pending" || t.Status == "Failed" || t.Status == "Success" || t.Status == "Running") {
+		isEligible := !t.Disabled && (t.Status == "Pending" || t.Status == "Failed" || t.Status == "Success" || t.Status == "Running" || t.Status == "Submitted")
+		a.Log(fmt.Sprintf(" - Task %d: Agent=%s, Status=%s, Disabled=%v, Eligible=%v", t.ID, t.Agent, t.Status, t.Disabled, isEligible))
+		if isEligible {
 			tasksToRun = append(tasksToRun, t)
 		}
 	}
+	count := len(tasksToRun)
 	a.Mu.Unlock()
 
-	if len(tasksToRun) == 0 {
+	if count == 0 {
+		a.Log("RunTasks: No eligible tasks found to run immediately. (Status must be Pending, Failed, Success, or Submitted)")
+		runtime.EventsEmit(a.ctx, "run_finished")
 		return
 	}
 
+	a.Log(fmt.Sprintf("RunTasks: Found %d eligible tasks to execute.", count))
 	a.incrementRunningTasks("Immediate")
 	go func() {
 		defer a.decrementRunningTasks("Immediate")
@@ -575,7 +583,7 @@ func (a *App) incrementRunningTasks(mode string) {
 	}
 	imm, bat := a.RunningImmediate, a.RunningBatch
 	a.Mu.Unlock()
-	a.Log(fmt.Sprintf("Running tasks - Imm: %d, Batch: %d", imm, bat))
+	a.Log(fmt.Sprintf("Task count increased - Imm: %d, Batch: %d", imm, bat))
 }
 
 func (a *App) decrementRunningTasks(mode string) {
@@ -597,7 +605,7 @@ func (a *App) decrementRunningTasks(mode string) {
 	}
 	imm, bat := a.RunningImmediate, a.RunningBatch
 	a.Mu.Unlock()
-	a.Log(fmt.Sprintf("Running tasks - Imm: %d, Batch: %d", imm, bat))
+	a.Log(fmt.Sprintf("Task count decreased - Imm: %d, Batch: %d", imm, bat))
 }
 
 func (a *App) ResetCounters() {
@@ -618,9 +626,11 @@ func (a *App) ResetCounters() {
 }
 
 func (a *App) executeTask(task *TaskInfo, mode string) {
+	a.Log(fmt.Sprintf("executeTask starting for task %d (mode: %s)", task.ID, mode))
 	a.Mu.Lock()
 	task.Status = "Running"
 	task.RunningCount++
+	a.Log(fmt.Sprintf("Task %d RunningCount incremented to %d", task.ID, task.RunningCount))
 	a.Mu.Unlock()
 
 	defer func() {

@@ -167,13 +167,18 @@ function setupEventListeners() {
     document.getElementById('btn-load-session').onclick = () => LoadSessionUI();
     document.getElementById('btn-save-session').onclick = () => SaveSessionUI();
     document.getElementById('btn-run-immediate').onclick = (e) => {
-        e.target.disabled = true;
-        RunTasks();
-        addLog("Running tasks in Immediate mode...");
+        RunTasks().catch(err => {
+            addLog("Error starting immediate tasks: " + err);
+            updateRunButtons();
+        });
+        addLog("Triggering immediate execution...");
     };
     document.getElementById('btn-run-batch').onclick = () => {
-        RunBatch();
-        addLog("Batch mode submission triggered.");
+        RunBatch().catch(err => {
+            addLog("Error starting batch job: " + err);
+            updateRunButtons();
+        });
+        addLog("Triggering batch submission...");
     };
 
     const chatInput = document.getElementById('chat-input');
@@ -255,16 +260,36 @@ function setupEventListeners() {
         const message = input.value.trim();
         if (!message) return;
 
-        history.innerHTML += `\n<b>User:</b>\n${message}\n`;
+        // Use safe message appending
+        const userDiv = document.createElement('div');
+        userDiv.style.marginBottom = '10px';
+        userDiv.innerHTML = '<b>User:</b>';
+        const userText = document.createElement('div');
+        userText.textContent = message;
+        userDiv.appendChild(userText);
+        history.appendChild(userDiv);
+
         history.scrollTop = history.scrollHeight;
         input.value = '';
         document.getElementById('chat-cost-estimate').innerText = `Estimate: $0.000000`;
 
         try {
             const reply = await SendChatMessage(agent, message);
-            history.innerHTML += `\n<b>AI:</b>\n${reply}\n`;
+            const aiDiv = document.createElement('div');
+            aiDiv.style.marginBottom = '10px';
+            aiDiv.innerHTML = '<b>AI:</b>';
+            const aiText = document.createElement('div');
+            aiText.textContent = reply;
+            aiDiv.appendChild(aiText);
+            history.appendChild(aiDiv);
         } catch (err) {
-            history.innerHTML += `\n<span style="color: #e74c3c"><b>Error:</b> ${err}</span>\n`;
+            const errDiv = document.createElement('div');
+            errDiv.style.color = '#e74c3c';
+            errDiv.innerHTML = '<b>Error:</b>';
+            const errText = document.createElement('div');
+            errText.textContent = err;
+            errDiv.appendChild(errText);
+            history.appendChild(errDiv);
         }
         history.scrollTop = history.scrollHeight;
     };

@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type ImagenRequest struct {
@@ -146,6 +148,10 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 
 	modelID := a.GetModelID(task.Agent)
 	apiKey := a.getAPIKey(a.Config.IsFreeModeImage)
+	modeStr := "Paid"
+	if a.Config.IsFreeModeImage {
+		modeStr = "Free"
+	}
 
 	var url string
 	var reqBody []byte
@@ -160,11 +166,16 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 	}
 
 	if err != nil {
+		a.Log(fmt.Sprintf("Payload build failed for task %d: %v", task.ID, err))
 		return err
 	}
 
+	a.Log(fmt.Sprintf("Sending API request for task %d (Model: %s, Billing: %s)", task.ID, modelID, modeStr))
+	a.LogToFile(fmt.Sprintf("Task %d Payload: %s", task.ID, string(reqBody)))
+
 	resp, err := a.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
+		a.Log(fmt.Sprintf("Network error for task %d: %v", task.ID, err))
 		return err
 	}
 	defer resp.Body.Close()
@@ -172,9 +183,12 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		return a.HandleError(body, resp.StatusCode)
+		apiErr := a.HandleError(body, resp.StatusCode)
+		a.Log(fmt.Sprintf("API error for task %d (Status %d): %v", task.ID, resp.StatusCode, apiErr))
+		return apiErr
 	}
 
+	a.Log(fmt.Sprintf("API response received for task %d (Status 200)", task.ID))
 	return a.ProcessResponse(body, task)
 }
 
@@ -659,6 +673,16 @@ func (a *App) DownloadBatchResults(fileID string, isFree bool) error {
 
 		if len(result.Error) > 0 {
 			a.Log("Task " + result.CustomID + " failed in batch: " + string(result.Error))
+			var taskID int
+			fmt.Sscanf(result.CustomID, "task_%d_", &taskID)
+			a.Mu.Lock()
+			for _, t := range a.Tasks {
+				if t.ID == taskID {
+					t.Status = "Failed"
+					break
+				}
+			}
+			a.Mu.Unlock()
 			continue
 		}
 
@@ -667,6 +691,7 @@ func (a *App) DownloadBatchResults(fileID string, isFree bool) error {
 	}
 
 	a.CleanupJobsFile()
+	runtime.EventsEmit(a.ctx, "tasks_updated")
 	return nil
 }
 
@@ -711,6 +736,7 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 				for _, t := range a.Tasks {
 					if t.ID == taskID {
 						t.LastSavedPath = outPath
+						t.Status = "Success"
 						break
 					}
 				}
@@ -738,6 +764,7 @@ func (a *App) CalculateChatCost(model, message string) float64 {
 func (a *App) SendChatMessage(model, message string) (string, error) {
 	apiKey := a.getAPIKey(a.Config.IsFreeModeChat)
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
+	a.Log(fmt.Sprintf("Sending Chat request to model: %s", model))
 
 	req := GeminiRequest{
 		Contents: []Content{{
