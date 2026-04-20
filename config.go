@@ -45,6 +45,12 @@ func LoadConfig() (*Config, error) {
 	if cfg.ChatModelList == "" {
 		cfg.ChatModelList = def.ChatModelList
 	}
+	if cfg.DefaultPrompt == "" {
+		cfg.DefaultPrompt = def.DefaultPrompt
+	}
+	if cfg.DefaultNegPrompt == "" {
+		cfg.DefaultNegPrompt = def.DefaultNegPrompt
+	}
 
 	if cfg.SafetySettings == nil {
 		cfg.SafetySettings = def.SafetySettings
@@ -76,6 +82,10 @@ func LoadConfig() (*Config, error) {
 	}
 	if cfg.SplitOffsetMain <= 0 || cfg.SplitOffsetMain >= 1 {
 		cfg.SplitOffsetMain = def.SplitOffsetMain
+	}
+
+	if cfg.ChatSystemPrompt == "" {
+		cfg.ChatSystemPrompt = def.ChatSystemPrompt
 	}
 
 	return &cfg, nil
@@ -154,5 +164,6 @@ func DefaultConfig() *Config {
 		ChatMemoryEnabled:   false,
 		ChatRememberInitial: false,
 		ChatMemorySlots:     3,
+		ChatSystemPrompt:    "You are a helpful and professional assistant. Keep your answers concise and accurate.",
 	}
 }

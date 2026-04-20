@@ -31,7 +31,10 @@ import {
     SendChatMessage,
     CalculateChatCost,
     ClearChatMemory,
-    ClearFinishedTasks
+    ClearTasks,
+    ClearImages,
+    DeleteSelectedImages,
+    ProcessDroppedFiles
 } from '../wailsjs/go/main/App';
 import { EventsOn, OnFileDrop } from '../wailsjs/runtime/runtime';
 
@@ -57,13 +60,14 @@ window.addEventListener('DOMContentLoaded', async () => {
         OnFileDrop((x, y, paths) => {
             if (paths && paths.length > 0) {
                 console.log("Files dropped:", paths);
-                AddImages(paths);
+                ProcessDroppedFiles(paths);
             }
         }, false);
 
         setupEventListeners();
         await refreshData();
         clearEditor();
+        updateRatioPreview();
         renderAll();
         addLog("Application Initialized");
     } catch (err) {
@@ -125,16 +129,16 @@ function setupEventListeners() {
         if (timerCont) timerCont.innerText = `Next check in: ${seconds}s`;
     });
 
-    EventsOn("test_api_started", () => {
-        const status = document.getElementById('test-api-status');
+    EventsOn("test_api_started", (mode) => {
+        const status = document.getElementById('test-api-status-' + mode);
         if (status) {
             status.innerText = "Testing...";
             status.style.color = "#3498db";
         }
     });
 
-    EventsOn("test_api_finished", (success, msg) => {
-        const status = document.getElementById('test-api-status');
+    EventsOn("test_api_finished", (mode, success, msg) => {
+        const status = document.getElementById('test-api-status-' + mode);
         if (status) {
             status.innerText = success ? "Success" : "Failed";
             status.style.color = success ? "#2ecc71" : "#e74c3c";
@@ -211,16 +215,21 @@ function setupEventListeners() {
         state.config.chat_memory_enabled = document.getElementById('chat-memory-enabled').checked;
         state.config.chat_remember_initial = document.getElementById('chat-remember-initial').checked;
         state.config.chat_memory_slots = parseInt(document.getElementById('chat-memory-slots').value) || 3;
+        state.config.chat_system_prompt = document.getElementById('chat-system-prompt').value;
         await SaveConfig(state.config);
+        const input = document.getElementById('chat-input');
+        if (input) {
+            const agent = document.getElementById('chat-agent-select').value;
+            const cost = await CalculateChatCost(agent, input.value);
+            document.getElementById('chat-cost-estimate').innerText = `Estimate: $${cost.toFixed(6)}`;
+        }
     };
     window.ResetToDefault = async (field) => {
         const def = await GetDefaultConfig();
-        if (field === 'api_key_paid') {
-            document.getElementById('settings-api-key-paid').value = def.api_key_paid || '';
-        } else if (field === 'api_key_free') {
-            document.getElementById('settings-api-key-free').value = def.api_key_free || '';
-        } else if (field === 'output_dir') {
-            document.getElementById('settings-output-dir').value = def.output_dir || '';
+        if (field === 'default_prompt') {
+            document.getElementById('settings-default-prompt').value = def.default_prompt || '';
+        } else if (field === 'default_neg_prompt') {
+            document.getElementById('settings-default-neg-prompt').value = def.default_neg_prompt || '';
         } else if (field === 'encourage_gen') {
             document.getElementById('settings-encourage-gen').value = def.encourage_gen || '';
         } else if (field === 'encourage_edt') {
@@ -261,7 +270,10 @@ function setupEventListeners() {
     window.ToggleTaskDisabled = ToggleTaskDisabled;
     window.ResetCounters = ResetCounters;
     window.OpenImageFolder = OpenImageFolder;
-    window.ClearFinishedTasks = ClearFinishedTasks;
+    window.updateRatioPreview = updateRatioPreview;
+    window.ClearTasks = ClearTasks;
+    window.ClearImages = ClearImages;
+    window.DeleteSelectedImages = DeleteSelectedImages;
     window.ClearChatMemory = async () => {
         await ClearChatMemory();
         document.getElementById('chat-history').innerHTML = '';
@@ -284,6 +296,7 @@ function setupEventListeners() {
         history.appendChild(userDiv);
 
         history.scrollTop = history.scrollHeight;
+        const originalValue = input.value;
         input.value = '';
         document.getElementById('chat-cost-estimate').innerText = `Estimate: $0.000000`;
 
@@ -297,6 +310,7 @@ function setupEventListeners() {
             aiDiv.appendChild(aiText);
             history.appendChild(aiDiv);
         } catch (err) {
+            input.value = originalValue;
             const errDiv = document.createElement('div');
             errDiv.style.color = '#e74c3c';
             errDiv.innerHTML = '<b>Error:</b>';
@@ -340,10 +354,45 @@ function setupEventListeners() {
             return;
         }
 
+        const firstImg = selected[0];
+        let ratio = document.getElementById('ratio-select').value;
+        if (firstImg.Width > 0 && firstImg.Height > 0) {
+            const targetRatio = firstImg.Width / firstImg.Height;
+            const availableRatios = [
+                { label: "1:8", val: 1 / 8 },
+                { label: "1:4", val: 1 / 4 },
+                { label: "9:16", val: 9 / 16 },
+                { label: "2:3", val: 2 / 3 },
+                { label: "3:4", val: 3 / 4 },
+                { label: "4:5", val: 4 / 5 },
+                { label: "1:1", val: 1 },
+                { label: "5:4", val: 5 / 4 },
+                { label: "4:3", val: 4 / 3 },
+                { label: "3:2", val: 3 / 2 },
+                { label: "16:9", val: 16 / 9 },
+                { label: "21:9", val: 21 / 9 },
+                { label: "4:1", val: 4 },
+                { label: "8:1", val: 8 }
+            ];
+
+            let best = availableRatios[0];
+            let minDiff = Math.abs(targetRatio - best.val);
+
+            for (const r of availableRatios) {
+                const diff = Math.abs(targetRatio - r.val);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    best = r;
+                }
+            }
+            ratio = best.label;
+            document.getElementById('ratio-select').value = ratio;
+            updateRatioPreview();
+        }
+
         const imgIDs = selected.map(i => i.ID).join("+");
         const paths = selected.map(i => i.FullPath).join("|");
         const tier = document.getElementById('tier-select').value;
-        const ratio = document.getElementById('ratio-select').value;
         const prompt = document.getElementById('prompt').value || state.config.default_prompt;
         const negPrompt = document.getElementById('neg-prompt').value || state.config.default_neg_prompt;
 
@@ -373,6 +422,7 @@ function setupEventListeners() {
 
         await updateCostDisplay(task.Agent, task.Size);
         await UpdateTask(task);
+        updateRatioPreview();
     };
 
     window.SaveSettings = async () => {
@@ -381,6 +431,8 @@ function setupEventListeners() {
         c.api_key_free = document.getElementById('settings-api-key-free').value;
         c.output_dir = document.getElementById('settings-output-dir').value;
         c.debug = document.getElementById('settings-debug').checked;
+        c.default_prompt = document.getElementById('settings-default-prompt').value;
+        c.default_neg_prompt = document.getElementById('settings-default-neg-prompt').value;
         c.encourage_gen = document.getElementById('settings-encourage-gen').value;
         c.encourage_edt = document.getElementById('settings-encourage-edt').value;
         c.temperature = parseFloat(document.getElementById('settings-temp').value);
@@ -447,9 +499,13 @@ function populateSettings(c) {
     document.getElementById('chat-memory-enabled').checked = !!c.chat_memory_enabled;
     document.getElementById('chat-remember-initial').checked = !!c.chat_remember_initial;
     document.getElementById('chat-memory-slots').value = c.chat_memory_slots || 3;
+    const sysPrompt = document.getElementById('chat-system-prompt');
+    if (sysPrompt) sysPrompt.value = c.chat_system_prompt || '';
 
     document.getElementById('settings-output-dir').value = c.output_dir || '';
     document.getElementById('settings-debug').checked = !!c.debug;
+    document.getElementById('settings-default-prompt').value = c.default_prompt || '';
+    document.getElementById('settings-default-neg-prompt').value = c.default_neg_prompt || '';
     document.getElementById('settings-encourage-gen').value = c.encourage_gen || '';
     document.getElementById('settings-encourage-edt').value = c.encourage_edt || '';
     document.getElementById('settings-temp').value = c.temperature || 1.0;
@@ -612,14 +668,6 @@ function renderImageList() {
         const check = item.querySelector('.img-check');
         check.onchange = (e) => {
             img.Selected = e.target.checked;
-
-            // Auto-update Source IDs if a task is selected
-            if (state.selectedTaskID) {
-                const selectedImgs = state.images.filter(i => i.Selected).map(i => i.ID).join("+");
-                document.getElementById('source-ids').value = selectedImgs;
-                window.UpdateTaskFromUI();
-            }
-
             updateRunButtons();
         };
 
@@ -638,10 +686,15 @@ function renderImageList() {
 
         item.oncontextmenu = (e) => {
             e.preventDefault();
-            showContextMenu(e.clientX, e.clientY, [
+            const menu = [
                 { label: 'Change Image', action: () => window.ChangeImageUI(img.ID) },
                 { label: 'Delete Image', action: () => window.DeleteImage(img.ID) }
-            ]);
+            ];
+            const selected = state.images.filter(i => i.Selected);
+            if (selected.length > 0) {
+                menu.push({ label: `Delete Checked (${selected.length})`, action: () => window.DeleteSelectedImages() });
+            }
+            showContextMenu(e.clientX, e.clientY, menu);
         };
 
         list.appendChild(item);
@@ -711,6 +764,7 @@ async function populateEditor(task) {
     filterRatios(task.Agent);
     document.getElementById('ratio-select').value = task.Ratio;
     await updateCostDisplay(task.Agent, task.Size);
+    updateRatioPreview();
 }
 
 async function clearEditor() {
@@ -722,6 +776,7 @@ async function clearEditor() {
     filterRatios(tier);
     document.getElementById('ratio-select').selectedIndex = 0;
     await updateCostDisplay(tier.split(" ").slice(0, -1).join(" "), tier.split(" ").pop());
+    updateRatioPreview();
 }
 
 function filterRatios(agent) {
@@ -810,6 +865,52 @@ function showContextMenu(x, y, items) {
 }
 
 // --- Logs ---
+
+function updateRatioPreview() {
+    const canvas = document.getElementById('ratio-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const ratioStr = document.getElementById('ratio-select').value;
+    const parts = ratioStr.split(':');
+    const rw = parseInt(parts[0]);
+    const rh = parseInt(parts[1]);
+
+    const cw = canvas.width;
+    const ch = canvas.height;
+    ctx.clearRect(0, 0, cw, ch);
+
+    // Margin for the box
+    const margin = 10;
+    const availW = cw - margin * 2;
+    const availH = ch - margin * 2;
+
+    let targetW, targetH;
+    if (rw / rh > availW / availH) {
+        targetW = availW;
+        targetH = availW * (rh / rw);
+    } else {
+        targetH = availH;
+        targetW = availH * (rw / rh);
+    }
+
+    const x = (cw - targetW) / 2;
+    const y = (ch - targetH) / 2;
+
+    ctx.fillStyle = '#3498db';
+    ctx.globalAlpha = 0.3;
+    ctx.fillRect(x, y, targetW, targetH);
+
+    ctx.strokeStyle = '#3498db';
+    ctx.globalAlpha = 1.0;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, targetW, targetH);
+
+    // Text label inside
+    ctx.fillStyle = 'white';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(ratioStr, cw / 2, ch / 2 + 4);
+}
 
 function addLog(msg) {
     const logArea = document.getElementById('logs');

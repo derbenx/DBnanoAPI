@@ -44,6 +44,7 @@ type Config struct {
 	ChatMemoryEnabled   bool `json:"chat_memory_enabled"`
 	ChatRememberInitial bool `json:"chat_remember_initial"`
 	ChatMemorySlots     int  `json:"chat_memory_slots"`
+	ChatSystemPrompt    string `json:"chat_system_prompt"`
 }
 
 type ImageInfo struct {
@@ -53,6 +54,8 @@ type ImageInfo struct {
 	SizeMB    float64
 	TaskCount int
 	Selected  bool // For checkbox selection
+	Width     int
+	Height    int
 }
 
 type TaskInfo struct {

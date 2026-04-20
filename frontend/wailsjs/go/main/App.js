@@ -50,8 +50,12 @@ export function ClearFinishedJobs() {
   return window['go']['main']['App']['ClearFinishedJobs']();
 }
 
-export function ClearFinishedTasks() {
-  return window['go']['main']['App']['ClearFinishedTasks']();
+export function ClearImages() {
+  return window['go']['main']['App']['ClearImages']();
+}
+
+export function ClearTasks() {
+  return window['go']['main']['App']['ClearTasks']();
 }
 
 export function CreateNewImage() {
@@ -60,6 +64,10 @@ export function CreateNewImage() {
 
 export function DeleteImage(arg1) {
   return window['go']['main']['App']['DeleteImage'](arg1);
+}
+
+export function DeleteSelectedImages() {
+  return window['go']['main']['App']['DeleteSelectedImages']();
 }
 
 export function DeleteTask(arg1) {
@@ -140,6 +148,10 @@ export function OpenImageFolder() {
 
 export function ProcessBatchItem(arg1, arg2) {
   return window['go']['main']['App']['ProcessBatchItem'](arg1, arg2);
+}
+
+export function ProcessDroppedFiles(arg1) {
+  return window['go']['main']['App']['ProcessDroppedFiles'](arg1);
 }
 
 export function ProcessResponse(arg1, arg2) {

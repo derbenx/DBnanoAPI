@@ -41,6 +41,7 @@ type GeminiRequest struct {
 }
 
 type Content struct {
+	Role  string `json:"role,omitempty"`
 	Parts []Part `json:"parts"`
 }
 
@@ -747,15 +748,34 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 }
 
 func (a *App) CalculateChatCost(model, message string) float64 {
-	// Simple estimation: $1 per 1 million tokens for simplicity, or something similar
-	// Flash models are usually $0.10 / 1M input.
-	// We'll use a conservative estimate.
 	totalChars := len(message)
 
 	a.Mu.RLock()
 	if a.Config.ChatMemoryEnabled {
-		// Include memory in cost estimate
-		for _, content := range a.ChatMemory {
+		// Calculate what will actually be sent
+		slots := a.Config.ChatMemorySlots
+		if slots < 1 { slots = 1 }
+
+		var history []Content
+		if a.Config.ChatRememberInitial && len(a.ChatMemory) >= 2 {
+			initial := a.ChatMemory[:2]
+			rolling := a.ChatMemory[2:]
+			limit := (slots - 2) * 2
+			if limit < 0 { limit = 0 }
+			if len(rolling) > limit {
+				rolling = rolling[len(rolling)-limit:]
+			}
+			history = append(initial, rolling...)
+		} else {
+			limit := (slots - 1) * 2
+			if limit < 0 { limit = 0 }
+			history = a.ChatMemory
+			if len(history) > limit {
+				history = history[len(history)-limit:]
+			}
+		}
+
+		for _, content := range history {
 			for _, part := range content.Parts {
 				totalChars += len(part.Text)
 			}
@@ -763,7 +783,7 @@ func (a *App) CalculateChatCost(model, message string) float64 {
 	}
 	a.Mu.RUnlock()
 
-	tokens := totalChars / 4 // Very rough estimate
+	tokens := totalChars / 4
 	if tokens < 1 {
 		tokens = 1
 	}
@@ -784,27 +804,25 @@ func (a *App) SendChatMessage(model, message string) (string, error) {
 		a.ChatMemory = nil
 	}
 
-	// Add current message to memory
-	newMsg := Content{Parts: []Part{{Text: message}}}
+	newMsg := Content{Role: "user", Parts: []Part{{Text: message}}}
 
 	var contents []Content
 	if a.Config.ChatMemoryEnabled {
-		// If remember initial is on, keep the first pair if it exists
-		var initialPair []Content
-		if a.Config.ChatRememberInitial && len(a.ChatMemory) >= 2 {
-			initialPair = a.ChatMemory[:2]
-			// The rest of the history
-			history := a.ChatMemory[2:]
+		slots := a.Config.ChatMemorySlots
+		if slots < 1 { slots = 1 }
 
-			// Limit history to (Slots * 2) - 2 since we already have 1 pair (initial)
-			limit := (a.Config.ChatMemorySlots * 2)
-			if len(history) > limit {
-				history = history[len(history)-limit:]
+		if a.Config.ChatRememberInitial && len(a.ChatMemory) >= 2 {
+			initial := a.ChatMemory[:2]
+			rolling := a.ChatMemory[2:]
+			limit := (slots - 2) * 2
+			if limit < 0 { limit = 0 }
+			if len(rolling) > limit {
+				rolling = rolling[len(rolling)-limit:]
 			}
-			contents = append(initialPair, history...)
+			contents = append(initial, rolling...)
 		} else {
-			// Just normal rolling memory
-			limit := (a.Config.ChatMemorySlots * 2)
+			limit := (slots - 1) * 2
+			if limit < 0 { limit = 0 }
 			history := a.ChatMemory
 			if len(history) > limit {
 				history = history[len(history)-limit:]
@@ -819,6 +837,7 @@ func (a *App) SendChatMessage(model, message string) (string, error) {
 
 	req := GeminiRequest{
 		Contents: contents,
+		SystemInstruction: &Content{Parts: []Part{{Text: a.Config.ChatSystemPrompt}}},
 		GenerationConfig: &GenerationConfig{
 			CandidateCount:  1,
 			Temperature:     a.Config.Temperature,
@@ -860,9 +879,9 @@ func (a *App) SendChatMessage(model, message string) (string, error) {
 
 		a.Mu.Lock()
 		if a.Config.ChatMemoryEnabled {
-			// Append both user message and AI reply to memory
-			a.ChatMemory = append(a.ChatMemory, Content{Parts: []Part{{Text: message}}})
-			a.ChatMemory = append(a.ChatMemory, Content{Parts: []Part{{Text: reply}}})
+			// Append both user message and AI reply to memory in pairs
+			a.ChatMemory = append(a.ChatMemory, Content{Role: "user", Parts: []Part{{Text: message}}})
+			a.ChatMemory = append(a.ChatMemory, Content{Role: "model", Parts: []Part{{Text: reply}}})
 		}
 		a.Mu.Unlock()
 

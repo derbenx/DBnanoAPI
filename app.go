@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"net/http"
 	"os"
 	"os/exec"
@@ -208,6 +211,54 @@ func (a *App) LoadJobs() {
 	a.Log(fmt.Sprintf("Loaded %d batch jobs from jobs.txt", count))
 }
 
+func (a *App) ProcessDroppedFiles(paths []string) {
+	var imagePaths []string
+	var sessionLoaded bool
+
+	for _, p := range paths {
+		ext := strings.ToLower(filepath.Ext(p))
+		if ext == ".json" {
+			// Try loading as session
+			f, err := os.Open(p)
+			if err == nil {
+				if err := a.LoadSession(f); err == nil {
+					a.Log("Session loaded from dropped file: " + p)
+					sessionLoaded = true
+				}
+				f.Close()
+			}
+		} else if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".webp" {
+			imagePaths = append(imagePaths, p)
+		}
+	}
+
+	if len(imagePaths) > 0 {
+		a.AddImages(imagePaths)
+	}
+
+	if sessionLoaded {
+		// Sync IDs and refresh
+		a.Mu.Lock()
+		maxImg := 0
+		for _, img := range a.Images {
+			var id int
+			fmt.Sscanf(img.ID, "%d", &id)
+			if id > maxImg { maxImg = id }
+		}
+		a.NextImageID = maxImg + 1
+
+		maxTask := 0
+		for _, t := range a.Tasks {
+			if t.ID > maxTask { maxTask = t.ID }
+		}
+		a.NextTaskID = maxTask + 1
+		a.Mu.Unlock()
+
+		runtime.EventsEmit(a.ctx, "images_updated")
+		runtime.EventsEmit(a.ctx, "tasks_updated")
+	}
+}
+
 func (a *App) AddImages(paths []string) {
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
@@ -216,11 +267,25 @@ func (a *App) AddImages(paths []string) {
 		if err != nil {
 			continue
 		}
+
+		w, h := 0, 0
+		f, err := os.Open(p)
+		if err == nil {
+			cfg, _, err := image.DecodeConfig(f)
+			if err == nil {
+				w = cfg.Width
+				h = cfg.Height
+			}
+			f.Close()
+		}
+
 		a.Images = append(a.Images, &ImageInfo{
 			ID:       fmt.Sprintf("%d", a.NextImageID),
 			FileName: filepath.Base(p),
 			FullPath: p,
 			SizeMB:   float64(info.Size()) / 1024 / 1024,
+			Width:    w,
+			Height:   h,
 		})
 		a.NextImageID++
 	}
@@ -266,10 +331,18 @@ func (a *App) CreateNewImage() {
 	runtime.EventsEmit(a.ctx, "images_updated")
 }
 
+func (a *App) getSessionDir() string {
+	dir := "session"
+	os.MkdirAll(dir, 0755)
+	abs, _ := filepath.Abs(dir)
+	return abs
+}
+
 func (a *App) SaveSessionUI() {
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Save Session",
-		DefaultFilename: "session.json",
+		Title:            "Save Session",
+		DefaultFilename:  "session.json",
+		DefaultDirectory: a.getSessionDir(),
 		Filters: []runtime.FileFilter{
 			{DisplayName: "JSON Files (*.json)", Pattern: "*.json"},
 		},
@@ -294,7 +367,8 @@ func (a *App) SaveSessionUI() {
 
 func (a *App) LoadSessionUI() {
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Load Session",
+		Title:            "Load Session",
+		DefaultDirectory: a.getSessionDir(),
 		Filters: []runtime.FileFilter{
 			{DisplayName: "JSON Files (*.json)", Pattern: "*.json"},
 		},
@@ -370,23 +444,49 @@ func (a *App) AddTask(imgIDs string, agent string, size string, ratio string, pr
 func (a *App) UpdateTask(task *TaskInfo) {
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
+
+	// Update the task and sync its SourcePath from ImgIDs
 	for _, t := range a.Tasks {
 		if t.ID == task.ID {
-			// Update only editable fields
 			t.ImgIDs = task.ImgIDs
 			t.Agent = task.Agent
 			t.Size = task.Size
 			t.Ratio = task.Ratio
 			t.Prompt = task.Prompt
 			t.NegativePrompt = task.NegativePrompt
-			t.SourcePath = task.SourcePath
+
+			// Resolve SourcePath from ImgIDs
+			var paths []string
+			ids := strings.Split(t.ImgIDs, "+")
+			for _, id := range ids {
+				id = strings.TrimSpace(id)
+				for _, img := range a.Images {
+					if img.ID == id {
+						paths = append(paths, img.FullPath)
+						break
+					}
+				}
+			}
+			t.SourcePath = strings.Join(paths, "|")
 
 			// Recalculate cost
 			t.Cost = a.CalculateCost(t.Agent, t.Size, "Immediate")
 			break
 		}
 	}
+
+	// Recalculate TaskCount for all images
+	for _, img := range a.Images {
+		img.TaskCount = 0
+		for _, t := range a.Tasks {
+			if a.isIDInMergedID(img.ID, t.ImgIDs) {
+				img.TaskCount++
+			}
+		}
+	}
+
 	runtime.EventsEmit(a.ctx, "tasks_updated")
+	runtime.EventsEmit(a.ctx, "images_updated")
 }
 
 func (a *App) DeleteImage(id string) {
@@ -429,31 +529,75 @@ func (a *App) isIDInMergedID(id, mID string) bool {
 	return false
 }
 
-func (a *App) ClearFinishedTasks() {
+func (a *App) ClearTasks() {
 	a.Mu.Lock()
-	var newTasks []*TaskInfo
-	for _, t := range a.Tasks {
-		if t.Status != "Success" && t.Status != "Failed" {
-			newTasks = append(newTasks, t)
+	a.Tasks = []*TaskInfo{}
+	a.NextTaskID = 1
+	// Reset TaskCount for all images
+	for _, img := range a.Images {
+		img.TaskCount = 0
+	}
+	a.Mu.Unlock()
+	a.Log("All tasks cleared.")
+	runtime.EventsEmit(a.ctx, "images_updated")
+	runtime.EventsEmit(a.ctx, "tasks_updated")
+}
+
+func (a *App) ClearImages() {
+	a.Mu.Lock()
+	a.Images = []*ImageInfo{}
+	a.NextImageID = 1
+	// Clearing images also clears tasks as they depend on image IDs
+	a.Tasks = []*TaskInfo{}
+	a.NextTaskID = 1
+	a.Mu.Unlock()
+	a.Log("All images and tasks cleared.")
+	runtime.EventsEmit(a.ctx, "images_updated")
+	runtime.EventsEmit(a.ctx, "tasks_updated")
+}
+
+func (a *App) DeleteSelectedImages() {
+	a.Mu.Lock()
+	var remaining []*ImageInfo
+	var deletedIDs []string
+	for _, img := range a.Images {
+		if img.Selected {
+			deletedIDs = append(deletedIDs, img.ID)
 		} else {
-			// Decrement image task counts
-			ids := strings.Split(t.ImgIDs, "+")
-			for _, imgID := range ids {
-				imgID = strings.TrimSpace(imgID)
-				for _, img := range a.Images {
-					if img.ID == imgID && img.TaskCount > 0 {
-						img.TaskCount--
-						break
-					}
-				}
-			}
+			remaining = append(remaining, img)
 		}
 	}
-	a.Tasks = newTasks
+
+	if len(deletedIDs) == 0 {
+		a.Mu.Unlock()
+		return
+	}
+
+	a.Images = remaining
+	// Remove tasks associated with deleted images
+	var remainingTasks []*TaskInfo
+	for _, t := range a.Tasks {
+		keep := true
+		for _, did := range deletedIDs {
+			if a.isIDInMergedID(did, t.ImgIDs) {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			remainingTasks = append(remainingTasks, t)
+		}
+	}
+	a.Tasks = remainingTasks
+
+	if len(a.Images) == 0 {
+		a.NextImageID = 1
+	}
 	if len(a.Tasks) == 0 {
 		a.NextTaskID = 1
 	}
 	a.Mu.Unlock()
+	a.Log(fmt.Sprintf("Deleted %d selected images and their associated tasks.", len(deletedIDs)))
 	runtime.EventsEmit(a.ctx, "images_updated")
 	runtime.EventsEmit(a.ctx, "tasks_updated")
 }
@@ -745,9 +889,11 @@ func (a *App) ClearFinishedJobs() {
 	a.Log("Clearing finished batch jobs...")
 	a.Mu.Lock()
 	var active []*BatchJob
+	countBefore := len(a.BatchJobs)
 	for _, j := range a.BatchJobs {
 		s := strings.ToUpper(j.Status)
-		// Check for terminal states: SUCCEEDED, FAILED, CANCELLED, EXPIRED, SUCCESS
+		// Terminal states from Gemini API include SUCCEEDED, FAILED, CANCELLED.
+		// We also handle normalized Success/Failed and EXPIRED.
 		isTerminal := (s == "SUCCEEDED" || s == "FAILED" || s == "CANCELLED" || s == "EXPIRED" || s == "SUCCESS")
 		if !isTerminal {
 			active = append(active, j)
@@ -756,8 +902,10 @@ func (a *App) ClearFinishedJobs() {
 		}
 	}
 	a.BatchJobs = active
+	countAfter := len(a.BatchJobs)
 	a.Mu.Unlock()
 
+	a.Log(fmt.Sprintf("Batch cleanup: %d -> %d jobs.", countBefore, countAfter))
 	a.CleanupJobsFile()
 	runtime.EventsEmit(a.ctx, "batch_updated")
 }
@@ -842,12 +990,12 @@ func (a *App) GetCost(agent, size, mode string) float64 {
 
 func (a *App) TestConnection(mode string) {
 	go func() {
-		runtime.EventsEmit(a.ctx, "test_api_started")
+		runtime.EventsEmit(a.ctx, "test_api_started", mode)
 		if err := a.TestAPI(mode); err != nil {
-			a.Log("API Test Failed: " + err.Error())
-			runtime.EventsEmit(a.ctx, "test_api_finished", false, err.Error())
+			a.Log("API Test (" + mode + ") Failed: " + err.Error())
+			runtime.EventsEmit(a.ctx, "test_api_finished", mode, false, err.Error())
 		} else {
-			runtime.EventsEmit(a.ctx, "test_api_finished", true, "Success")
+			runtime.EventsEmit(a.ctx, "test_api_finished", mode, true, "Success")
 		}
 	}()
 }
