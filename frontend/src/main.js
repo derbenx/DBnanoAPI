@@ -29,7 +29,9 @@ import {
     GetBatchJobs,
     OpenImageFolder,
     SendChatMessage,
-    CalculateChatCost
+    CalculateChatCost,
+    ClearChatMemory,
+    ClearFinishedTasks
 } from '../wailsjs/go/main/App';
 import { EventsOn, OnFileDrop } from '../wailsjs/runtime/runtime';
 
@@ -205,6 +207,12 @@ function setupEventListeners() {
         await SaveConfig(state.config);
         addLog(`Free Mode (${type}) ${enabled ? 'Enabled' : 'Disabled'}`);
     };
+    window.UpdateChatConfig = async () => {
+        state.config.chat_memory_enabled = document.getElementById('chat-memory-enabled').checked;
+        state.config.chat_remember_initial = document.getElementById('chat-remember-initial').checked;
+        state.config.chat_memory_slots = parseInt(document.getElementById('chat-memory-slots').value) || 3;
+        await SaveConfig(state.config);
+    };
     window.ResetToDefault = async (field) => {
         const def = await GetDefaultConfig();
         if (field === 'api_key_paid') {
@@ -253,6 +261,12 @@ function setupEventListeners() {
     window.ToggleTaskDisabled = ToggleTaskDisabled;
     window.ResetCounters = ResetCounters;
     window.OpenImageFolder = OpenImageFolder;
+    window.ClearFinishedTasks = ClearFinishedTasks;
+    window.ClearChatMemory = async () => {
+        await ClearChatMemory();
+        document.getElementById('chat-history').innerHTML = '';
+        addLog("Memory cleared.");
+    };
     window.SendChatMessage = async () => {
         const input = document.getElementById('chat-input');
         const agent = document.getElementById('chat-agent-select').value;
@@ -391,9 +405,9 @@ function setupEventListeners() {
         addLog("Configuration saved to config.json");
         const msg = document.getElementById('settings-saved-msg');
         if (msg) {
-            msg.style.opacity = '1';
+            msg.style.display = 'inline';
             setTimeout(() => {
-                msg.style.opacity = '0';
+                msg.style.display = 'none';
             }, 2000);
         }
     };
@@ -426,8 +440,14 @@ function populateSettings(c) {
     if (!c) return;
     document.getElementById('settings-api-key-paid').value = c.api_key_paid || '';
     document.getElementById('settings-api-key-free').value = c.api_key_free || '';
+
     document.getElementById('image-free-mode').checked = !!c.is_free_mode_image;
     document.getElementById('chat-free-mode').checked = !!c.is_free_mode_chat;
+
+    document.getElementById('chat-memory-enabled').checked = !!c.chat_memory_enabled;
+    document.getElementById('chat-remember-initial').checked = !!c.chat_remember_initial;
+    document.getElementById('chat-memory-slots').value = c.chat_memory_slots || 3;
+
     document.getElementById('settings-output-dir').value = c.output_dir || '';
     document.getElementById('settings-debug').checked = !!c.debug;
     document.getElementById('settings-encourage-gen').value = c.encourage_gen || '';

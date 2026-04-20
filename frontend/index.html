@@ -38,7 +38,10 @@
                 <div class="bottom-split">
                     <div class="panel-header">
                         <span>Tasks</span>
-                        <button onclick="window.AddTaskFromUI()">Add Task</button>
+                        <div class="header-btns">
+                            <button onclick="window.ClearFinishedTasks()" style="background-color: #e74c3c">Clear Finished</button>
+                            <button onclick="window.AddTaskFromUI()">Add Task</button>
+                        </div>
                     </div>
                     <div class="list-header">
                         <span style="width: 60px">Img</span>
@@ -133,14 +136,30 @@
         <div id="tab-chat" class="tab-content" style="display: none; height: calc(100% - 41px - 150px); flex-direction: column; padding: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h2>Chat with AI</h2>
-                <div style="display: flex; align-items: center; gap: 20px;">
-                    <div style="display: flex; align-items: center; gap: 10px; font-size: 0.85em;">
-                        <label style="font-weight: bold; color: #f1c40f;">Free Mode:</label>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <div style="display: flex; align-items: center; gap: 5px; font-size: 0.85em;">
+                        <label style="font-weight: bold; color: #3498db;">Memory:</label>
+                        <input type="checkbox" id="chat-memory-enabled" onchange="window.UpdateChatConfig()">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 5px; font-size: 0.85em;">
+                        <label title="Keep the very first message/reply pair always in context">Initial:</label>
+                        <input type="checkbox" id="chat-remember-initial" onchange="window.UpdateChatConfig()">
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 5px; font-size: 0.85em;">
+                        <label>Slots:</label>
+                        <input type="number" id="chat-memory-slots" min="1" max="50" style="width: 40px; background: #1a2533; border: 1px solid #34495e; color: white;" onchange="window.UpdateChatConfig()">
+                    </div>
+                    <button onclick="window.ClearChatMemory()" style="padding: 2px 8px; font-size: 0.8em; background-color: #e67e22;">Clear Mem</button>
+
+                    <div style="width: 20px;"></div>
+
+                    <div style="display: flex; align-items: center; gap: 5px; font-size: 0.85em;">
+                        <label style="font-weight: bold; color: #f1c40f;">Free:</label>
                         <input type="checkbox" id="chat-free-mode" onchange="window.ToggleFreeMode('chat', this.checked)">
                     </div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 5px;">
                         <label>Agent:</label>
-                        <select id="chat-agent-select" style="min-width: 200px;"></select>
+                        <select id="chat-agent-select" style="min-width: 150px;"></select>
                     </div>
                 </div>
             </div>
@@ -303,7 +322,7 @@
                     <span id="test-api-status" style="font-weight: bold; font-size: 0.9em;"></span>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <span id="settings-saved-msg" style="color: #2ecc71; opacity: 0; transition: opacity 0.3s;">Saved!</span>
+                    <span id="settings-saved-msg" style="color: #2ecc71; display: none;">Saved!</span>
                     <button onclick="window.SaveSettings()" style="background-color: #27ae60">Save All Configuration</button>
                 </div>
             </div>

@@ -750,7 +750,20 @@ func (a *App) CalculateChatCost(model, message string) float64 {
 	// Simple estimation: $1 per 1 million tokens for simplicity, or something similar
 	// Flash models are usually $0.10 / 1M input.
 	// We'll use a conservative estimate.
-	tokens := len(message) / 4 // Very rough estimate
+	totalChars := len(message)
+
+	a.Mu.RLock()
+	if a.Config.ChatMemoryEnabled {
+		// Include memory in cost estimate
+		for _, content := range a.ChatMemory {
+			for _, part := range content.Parts {
+				totalChars += len(part.Text)
+			}
+		}
+	}
+	a.Mu.RUnlock()
+
+	tokens := totalChars / 4 // Very rough estimate
 	if tokens < 1 {
 		tokens = 1
 	}
@@ -766,10 +779,46 @@ func (a *App) SendChatMessage(model, message string) (string, error) {
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
 	a.Log(fmt.Sprintf("Sending Chat request to model: %s", model))
 
+	a.Mu.Lock()
+	if !a.Config.ChatMemoryEnabled {
+		a.ChatMemory = nil
+	}
+
+	// Add current message to memory
+	newMsg := Content{Parts: []Part{{Text: message}}}
+
+	var contents []Content
+	if a.Config.ChatMemoryEnabled {
+		// If remember initial is on, keep the first pair if it exists
+		var initialPair []Content
+		if a.Config.ChatRememberInitial && len(a.ChatMemory) >= 2 {
+			initialPair = a.ChatMemory[:2]
+			// The rest of the history
+			history := a.ChatMemory[2:]
+
+			// Limit history to (Slots * 2) - 2 since we already have 1 pair (initial)
+			limit := (a.Config.ChatMemorySlots * 2)
+			if len(history) > limit {
+				history = history[len(history)-limit:]
+			}
+			contents = append(initialPair, history...)
+		} else {
+			// Just normal rolling memory
+			limit := (a.Config.ChatMemorySlots * 2)
+			history := a.ChatMemory
+			if len(history) > limit {
+				history = history[len(history)-limit:]
+			}
+			contents = history
+		}
+		contents = append(contents, newMsg)
+	} else {
+		contents = []Content{newMsg}
+	}
+	a.Mu.Unlock()
+
 	req := GeminiRequest{
-		Contents: []Content{{
-			Parts: []Part{{Text: message}},
-		}},
+		Contents: contents,
 		GenerationConfig: &GenerationConfig{
 			CandidateCount:  1,
 			Temperature:     a.Config.Temperature,
@@ -807,7 +856,17 @@ func (a *App) SendChatMessage(model, message string) (string, error) {
 	}
 
 	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
-		return geminiResp.Candidates[0].Content.Parts[0].Text, nil
+		reply := geminiResp.Candidates[0].Content.Parts[0].Text
+
+		a.Mu.Lock()
+		if a.Config.ChatMemoryEnabled {
+			// Append both user message and AI reply to memory
+			a.ChatMemory = append(a.ChatMemory, Content{Parts: []Part{{Text: message}}})
+			a.ChatMemory = append(a.ChatMemory, Content{Parts: []Part{{Text: reply}}})
+		}
+		a.Mu.Unlock()
+
+		return reply, nil
 	}
 
 	return "", fmt.Errorf("no response text from AI")

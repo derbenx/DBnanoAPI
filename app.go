@@ -34,6 +34,8 @@ type App struct {
 	BatchMonitorIndex int
 	RunningImmediate  int
 	RunningBatch      int
+
+	ChatMemory []Content
 }
 
 func NewApp() *App {
@@ -427,6 +429,35 @@ func (a *App) isIDInMergedID(id, mID string) bool {
 	return false
 }
 
+func (a *App) ClearFinishedTasks() {
+	a.Mu.Lock()
+	var newTasks []*TaskInfo
+	for _, t := range a.Tasks {
+		if t.Status != "Success" && t.Status != "Failed" {
+			newTasks = append(newTasks, t)
+		} else {
+			// Decrement image task counts
+			ids := strings.Split(t.ImgIDs, "+")
+			for _, imgID := range ids {
+				imgID = strings.TrimSpace(imgID)
+				for _, img := range a.Images {
+					if img.ID == imgID && img.TaskCount > 0 {
+						img.TaskCount--
+						break
+					}
+				}
+			}
+		}
+	}
+	a.Tasks = newTasks
+	if len(a.Tasks) == 0 {
+		a.NextTaskID = 1
+	}
+	a.Mu.Unlock()
+	runtime.EventsEmit(a.ctx, "images_updated")
+	runtime.EventsEmit(a.ctx, "tasks_updated")
+}
+
 func (a *App) DeleteTask(id int) {
 	a.Mu.Lock()
 	defer a.Mu.Unlock()
@@ -703,17 +734,30 @@ func (a *App) GetRunningTasksCount() int {
 	return a.RunningImmediate + a.RunningBatch
 }
 
-func (a *App) ClearFinishedJobs() {
+func (a *App) ClearChatMemory() {
 	a.Mu.Lock()
-	defer a.Mu.Unlock()
+	a.ChatMemory = nil
+	a.Mu.Unlock()
+	a.Log("Chat memory cleared.")
+}
+
+func (a *App) ClearFinishedJobs() {
+	a.Log("Clearing finished batch jobs...")
+	a.Mu.Lock()
 	var active []*BatchJob
 	for _, j := range a.BatchJobs {
 		s := strings.ToUpper(j.Status)
-		if s != "SUCCEEDED" && s != "FAILED" && s != "CANCELLED" && s != "EXPIRED" && s != "SUCCESS" {
+		// Check for terminal states: SUCCEEDED, FAILED, CANCELLED, EXPIRED, SUCCESS
+		isTerminal := (s == "SUCCEEDED" || s == "FAILED" || s == "CANCELLED" || s == "EXPIRED" || s == "SUCCESS")
+		if !isTerminal {
 			active = append(active, j)
+		} else {
+			a.Log(fmt.Sprintf("Removed finished job: %s (Status: %s)", j.JobID, j.Status))
 		}
 	}
 	a.BatchJobs = active
+	a.Mu.Unlock()
+
 	a.CleanupJobsFile()
 	runtime.EventsEmit(a.ctx, "batch_updated")
 }

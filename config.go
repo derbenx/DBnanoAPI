@@ -150,5 +150,9 @@ func DefaultConfig() *Config {
 		SplitOffsetLeft: 0.5,
 		SplitOffsetTop:  0.5,
 		LogSplitOffset:  0.8,
+
+		ChatMemoryEnabled:   false,
+		ChatRememberInitial: false,
+		ChatMemorySlots:     3,
 	}
 }

@@ -42,8 +42,16 @@ export function CleanupJobsFile() {
   return window['go']['main']['App']['CleanupJobsFile']();
 }
 
+export function ClearChatMemory() {
+  return window['go']['main']['App']['ClearChatMemory']();
+}
+
 export function ClearFinishedJobs() {
   return window['go']['main']['App']['ClearFinishedJobs']();
+}
+
+export function ClearFinishedTasks() {
+  return window['go']['main']['App']['ClearFinishedTasks']();
 }
 
 export function CreateNewImage() {

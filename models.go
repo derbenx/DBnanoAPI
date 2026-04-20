@@ -40,6 +40,10 @@ type Config struct {
 	SplitOffsetLeft float64 `json:"split_offset_left"`
 	SplitOffsetTop  float64 `json:"split_offset_top"`
 	LogSplitOffset  float64 `json:"log_split_offset"`
+
+	ChatMemoryEnabled   bool `json:"chat_memory_enabled"`
+	ChatRememberInitial bool `json:"chat_remember_initial"`
+	ChatMemorySlots     int  `json:"chat_memory_slots"`
 }
 
 type ImageInfo struct {
