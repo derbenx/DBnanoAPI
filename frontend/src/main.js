@@ -198,6 +198,12 @@ function setupEventListeners() {
     }
 
     // Global Exposure
+    window.TogglePassword = (id) => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+    };
     window.SelectAndAddMultipleImages = SelectAndAddMultipleImages;
     window.CreateNewImage = CreateNewImage;
     window.GetDefaultConfig = GetDefaultConfig;
@@ -404,12 +410,27 @@ function setupEventListeners() {
         addLog("Task added for: " + imgIDs);
     };
 
+    let sourceFilterTimeout;
     window.UpdateTaskFromUI = async () => {
         if (!state.selectedTaskID) return;
         const task = state.tasks.find(t => t.ID === state.selectedTaskID);
         if (!task) return;
 
-        task.ImgIDs = document.getElementById('source-ids').value;
+        const input = document.getElementById('source-ids');
+        task.ImgIDs = input.value;
+
+        clearTimeout(sourceFilterTimeout);
+        sourceFilterTimeout = setTimeout(async () => {
+            const currentIDs = state.images.map(img => img.ID);
+            const parts = input.value.split('+').map(p => p.trim()).filter(p => p !== "");
+            const filtered = parts.filter(p => currentIDs.includes(p));
+            const newVal = filtered.join('+');
+            if (newVal !== input.value) {
+                input.value = newVal;
+                task.ImgIDs = newVal;
+                await UpdateTask(task);
+            }
+        }, 2000);
         task.Prompt = document.getElementById('prompt').value;
         task.NegativePrompt = document.getElementById('neg-prompt').value;
         const tier = document.getElementById('tier-select').value;
@@ -470,6 +491,15 @@ function setupEventListeners() {
         const menu = document.getElementById('context-menu');
         if (menu) menu.style.display = 'none';
     });
+
+    // Disable custom context menu on inputs/textareas to allow native spellcheck/clipboard
+    document.addEventListener('contextmenu', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            // Let native context menu through
+            const menu = document.getElementById('context-menu');
+            if (menu) menu.style.display = 'none';
+        }
+    }, true);
 
     // Tab Cycling Shortcuts
     document.addEventListener('keydown', (e) => {
@@ -786,7 +816,7 @@ function filterRatios(agent) {
 
     for (let i = 0; i < options.length; i++) {
         const val = options[i].value;
-        if (val === "1:8" || val === "4:1" || val === "8:1") {
+        if (val === "1:8" || val === "1:4" || val === "4:1" || val === "8:1") {
             options[i].style.display = isNano2 ? "block" : "none";
             if (!isNano2 && ratioSelect.value === val) {
                 ratioSelect.value = "1:1";

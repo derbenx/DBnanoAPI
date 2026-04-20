@@ -131,6 +131,10 @@ body {
     user-select: text;
 }
 
+#chat-history, #chat-input, #chat-system-prompt, input, textarea {
+    user-select: text;
+}
+
 .btn-group {
     padding: 10px;
     background-color: var(--sidebar-bg);

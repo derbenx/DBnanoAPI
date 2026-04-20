@@ -193,7 +193,8 @@
                     <div class="input-field">
                         <label>Paid API Key:</label>
                         <div style="display: flex; gap: 5px; flex: 1;">
-                            <input type="text" id="settings-api-key-paid" style="flex: 1;">
+                            <input type="password" id="settings-api-key-paid" style="flex: 1;">
+                            <button onclick="window.TogglePassword('settings-api-key-paid')" style="padding: 5px 8px;">👁</button>
                             <button onclick="window.TestConnection('paid')" style="padding: 5px 10px;">Test</button>
                             <span id="test-api-status-paid" style="font-weight: bold; font-size: 0.9em; min-width: 60px;"></span>
                         </div>
@@ -201,7 +202,8 @@
                     <div class="input-field">
                         <label>Free API Key:</label>
                         <div style="display: flex; gap: 5px; flex: 1;">
-                            <input type="text" id="settings-api-key-free" style="flex: 1;">
+                            <input type="password" id="settings-api-key-free" style="flex: 1;">
+                            <button onclick="window.TogglePassword('settings-api-key-free')" style="padding: 5px 8px;">👁</button>
                             <button onclick="window.TestConnection('free')" style="padding: 5px 10px;">Test</button>
                             <span id="test-api-status-free" style="font-weight: bold; font-size: 0.9em; min-width: 60px;"></span>
                         </div>
