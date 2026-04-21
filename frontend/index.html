@@ -80,11 +80,11 @@
                                 <input type="checkbox" id="return-thought" onchange="window.UpdateTaskFromUI()">
                             </div>
                         </div>
-                        <textarea id="prompt" rows="10" onchange="window.UpdateTaskFromUI()"></textarea>
+                        <textarea id="prompt" rows="10" onchange="window.UpdateTaskFromUI()" spellcheck="true"></textarea>
                     </div>
                     <div class="input-field">
                         <label>Negative Prompt:</label>
-                        <textarea id="neg-prompt" rows="3" onchange="window.UpdateTaskFromUI()"></textarea>
+                        <textarea id="neg-prompt" rows="3" onchange="window.UpdateTaskFromUI()" spellcheck="true"></textarea>
                     </div>
                     <div style="display: flex; gap: 10px;">
                         <div class="input-field" style="flex: 1;">
@@ -140,11 +140,66 @@
             </div>
             <div id="batch-list"></div>
         </div>
-        <div id="tab-help" class="tab-content" style="display: none; height: calc(100% - 41px - 150px); overflow-y: auto; padding: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2>Help</h2>
+        <div id="tab-help" class="tab-content" style="display: none; height: calc(100% - 41px); overflow-y: auto; padding: 40px; line-height: 1.6; color: #ecf0f1; background-color: #0d1117;">
+            <div style="max-width: 900px; margin: 0 auto;">
+                <h1 style="color: #3498db; border-bottom: 2px solid #34495e; padding-bottom: 10px; margin-bottom: 30px;">NanoGo Pro Guide</h1>
+
+                <section style="margin-bottom: 40px;">
+                    <h2 style="color: #f1c40f;">🚀 Getting Started</h2>
+                    <p>NanoGo Pro is a high-performance frontend for Google's Gemini models, supporting both <strong>Image Generation</strong> and <strong>AI Chat</strong>. To start, head to the <strong>Settings</strong> tab and enter at least one API Key.</p>
+                </section>
+
+                <section style="margin-bottom: 40px;">
+                    <h2 style="color: #f1c40f;">🖼️ Image Generation (Create Tab)</h2>
+                    <ul style="padding-left: 20px;">
+                        <li><strong>Adding Images:</strong> Drag and drop image files anywhere on the app, or use the <strong>Add Images</strong> button. Use <strong>New Image</strong> to create a <code>&lt;GENERATE&gt;</code> placeholder for text-to-image tasks.</li>
+                        <li><strong>Creating Tasks:</strong> Select images using the checkboxes and click <strong>Add Task</strong>. You can merge multiple images into one task (e.g., for reference) by checking multiple boxes.</li>
+                        <li><strong>Source IDs:</strong> You can manually edit these. <code>1+2</code> will use both images. The field auto-filters non-existent IDs after 2 seconds.</li>
+                        <li><strong>Aspect Ratio:</strong> The app auto-picks the closest matching ratio when you add an image. Extreme ratios (1:4, 8:1) are exclusive to the <strong>Nano 2</strong> tier.</li>
+                        <li><strong>Return Thought:</strong> Enable this to save the AI's reasoning as a <code>.txt</code> file alongside your image.</li>
+                        <li><strong>Execution:</strong>
+                            <ul style="margin-top: 10px;">
+                                <li><strong>Immediate:</strong> Runs tasks locally and sequentially. Best for single prompt-only tasks.</li>
+                                <li><strong>Batch:</strong> Submits tasks to Google's cloud for 50% cheaper processing. Recommended for large sets of images.</li>
+                            </ul>
+                        </li>
+                    </ul>
+                </section>
+
+                <section style="margin-bottom: 40px;">
+                    <h2 style="color: #f1c40f;">💬 AI Chat</h2>
+                    <p>A simple yet powerful multi-turn chat interface.</p>
+                    <ul style="padding-left: 20px;">
+                        <li><strong>Personality:</strong> Set a system prompt to define how the AI behaves (e.g., "You are a coding expert").</li>
+                        <li><strong>Memory Slots:</strong> Controls how many previous message pairs are kept in context.</li>
+                        <li><strong>Initial Memory:</strong> If enabled, the very first exchange is always kept, helping the AI remember its primary goal throughout a long session.</li>
+                        <li><strong>Cost Estimate:</strong> Shows a character-based token cost approximation for the current input plus active memory.</li>
+                    </ul>
+                </section>
+
+                <section style="margin-bottom: 40px;">
+                    <h2 style="color: #f1c40f;">⚙️ API & Settings</h2>
+                    <ul style="padding-left: 20px;">
+                        <li><strong>Dual Keys:</strong> Use separate <strong>Paid</strong> and <strong>Free</strong> keys. Toggle <strong>Free Mode</strong> in the Chat or Create tabs to switch between them instantly.</li>
+                        <li><strong>Batch Monitoring:</strong> The app persists Job IDs in <code>jobs.txt</code>. It will resume tracking them even if you restart the application.</li>
+                        <li><strong>Resets:</strong> Use the <strong>Reset</strong> buttons next to individual sections to restore default values without wiping your API keys or paths.</li>
+                    </ul>
+                </section>
+
+                <section style="margin-bottom: 40px;">
+                    <h2 style="color: #f1c40f;">⌨️ Keyboard & UI Shortcuts</h2>
+                    <ul style="padding-left: 20px;">
+                        <li><strong>Tab Cycling:</strong> Use <code>Ctrl + Tab</code> and <code>Ctrl + Shift + Tab</code> to quickly switch views.</li>
+                        <li><strong>Context Menus:</strong> Right-click images or tasks for advanced options (Delete, Duplicate, Show Image, Change Reference).</li>
+                        <li><strong>Layout:</strong> Drag the vertical bar in the <strong>Create</strong> tab to resize your workspace. This position is saved automatically.</li>
+                        <li><strong>Sessions:</strong> Use <strong>Save/Load Session</strong> to keep track of complex task lists. You can also drop a <code>.json</code> session file directly onto the app.</li>
+                    </ul>
+                </section>
+
+                <footer style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #34495e; font-size: 0.9em; text-align: center; color: #7f8c8d;">
+                    NanoGo Pro - Powered by Gemini & Wails
+                </footer>
             </div>
-            help stuff goes here!
         </div>
         <div id="tab-chat" class="tab-content" style="display: none; height: calc(100% - 41px - 150px); flex-direction: column; padding: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -182,9 +237,9 @@
             <div style="display: flex; flex-direction: column; gap: 10px;">
                 <div style="display: flex; flex-direction: column; gap: 4px;">
                     <label style="font-size: 0.8em; color: #888;">Personality:</label>
-                    <textarea id="chat-system-prompt" rows="3" placeholder="System personality..." style="width: 100%; background-color: #1a2533; border: 1px solid #34495e; color: #bdc3c7; padding: 8px; border-radius: 5px; resize: none; font-size: 0.9em;" onchange="window.UpdateChatConfig()"></textarea>
+                    <textarea id="chat-system-prompt" rows="3" placeholder="System personality..." style="width: 100%; background-color: #1a2533; border: 1px solid #34495e; color: #bdc3c7; padding: 8px; border-radius: 5px; resize: none; font-size: 0.9em;" onchange="window.UpdateChatConfig()" spellcheck="true"></textarea>
                 </div>
-                <textarea id="chat-input" rows="3" placeholder="Type your message here..." style="width: 100%; background-color: #1a2533; border: 1px solid #34495e; color: #ecf0f1; padding: 10px; border-radius: 5px; resize: none;"></textarea>
+                <textarea id="chat-input" rows="3" placeholder="Type your message here..." style="width: 100%; background-color: #1a2533; border: 1px solid #34495e; color: #ecf0f1; padding: 10px; border-radius: 5px; resize: none;" spellcheck="true"></textarea>
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div id="chat-cost-estimate" style="font-weight: bold; color: #f1c40f;">Estimate: $0.0000</div>
                     <button onclick="window.SendChatMessage()" style="background-color: #27ae60; padding: 10px 30px;">Send Message</button>

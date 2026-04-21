@@ -767,40 +767,55 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 			}
 		}
 
-		if imageData != nil {
+		if imageData != nil || aiText != "" {
 			agentPrefix := strings.ReplaceAll(targetTask.Agent, " ", "_")
-			ext := "jpg"
-			if strings.Contains(strings.ToLower(mimeType), "png") {
-				ext = "png"
-			}
-
 			randomHex := fmt.Sprintf("%02x", time.Now().UnixNano()%256)
 			dateStr := time.Now().Format("2006-01-02-150405")
-			fileName := fmt.Sprintf("%s_%s_%s.%s", agentPrefix, dateStr, randomHex, ext)
-			outPath := filepath.Join(a.Config.OutputDir, fileName)
-
 			os.MkdirAll(a.Config.OutputDir, 0755)
-			if err := os.WriteFile(outPath, imageData, 0644); err != nil {
-				a.Log(fmt.Sprintf("Error saving image for task %d: %v", targetTask.ID, err))
-			} else {
-				a.Log(fmt.Sprintf("Saved task %d image: %s", targetTask.ID, outPath))
-			}
 
-			if targetTask.ReturnThought {
-				if aiText != "" {
-					txtPath := outPath[:len(outPath)-len(ext)-1] + ".txt"
-					if err := os.WriteFile(txtPath, []byte(aiText), 0644); err != nil {
-						a.Log("Error saving thoughts: " + err.Error())
-					} else {
-						a.Log("Saved AI thoughts: " + txtPath)
-					}
+			var primaryPath string
+
+			if imageData != nil {
+				ext := "jpg"
+				if strings.Contains(strings.ToLower(mimeType), "png") {
+					ext = "png"
+				}
+
+				fileName := fmt.Sprintf("%s_%s_%s.%s", agentPrefix, dateStr, randomHex, ext)
+				primaryPath = filepath.Join(a.Config.OutputDir, fileName)
+
+				if err := os.WriteFile(primaryPath, imageData, 0644); err != nil {
+					a.Log(fmt.Sprintf("Error saving image for task %d: %v", targetTask.ID, err))
 				} else {
-					a.Log(fmt.Sprintf("Warning: Thought process requested for task %d but no text was returned.", targetTask.ID))
+					a.Log(fmt.Sprintf("Saved task %d image: %s", targetTask.ID, primaryPath))
+				}
+
+				if targetTask.ReturnThought {
+					if aiText != "" {
+						txtPath := primaryPath[:len(primaryPath)-len(ext)-1] + ".txt"
+						if err := os.WriteFile(txtPath, []byte(aiText), 0644); err != nil {
+							a.Log("Error saving thoughts: " + err.Error())
+						} else {
+							a.Log("Saved AI thoughts: " + txtPath)
+						}
+					} else {
+						a.Log(fmt.Sprintf("Warning: Thought process requested for task %d but no text was returned.", targetTask.ID))
+					}
+				}
+			} else {
+				// Text only response
+				fileName := fmt.Sprintf("%s_%s_%s.txt", agentPrefix, dateStr, randomHex)
+				primaryPath = filepath.Join(a.Config.OutputDir, fileName)
+
+				if err := os.WriteFile(primaryPath, []byte(aiText), 0644); err != nil {
+					a.Log(fmt.Sprintf("Error saving text response for task %d: %v", targetTask.ID, err))
+				} else {
+					a.Log(fmt.Sprintf("Saved task %d AI response (text only): %s", targetTask.ID, primaryPath))
 				}
 			}
 
 			a.Mu.Lock()
-			targetTask.LastSavedPath = outPath
+			targetTask.LastSavedPath = primaryPath
 			targetTask.Status = "Success"
 			a.Mu.Unlock()
 		}
@@ -987,7 +1002,7 @@ func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
 			}
 		}
 
-		if imageData != "" {
+		if imageData != "" || aiText != "" {
 			return a.SaveBase64Image(imageData, mimeType, task, aiText)
 		}
 	}
@@ -1009,30 +1024,35 @@ func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
 }
 
 func (a *App) SaveBase64Image(b64, mime string, task *TaskInfo, aiText string) error {
-	data, err := base64.StdEncoding.DecodeString(b64)
-	if err != nil {
-		return err
-	}
-
 	agentPrefix := strings.ReplaceAll(task.Agent, " ", "_")
-	ext := "jpg"
-	if strings.Contains(strings.ToLower(mime), "png") {
-		ext = "png"
-	}
-
 	randomHex := fmt.Sprintf("%02x", time.Now().UnixNano()%256)
 	dateStr := time.Now().Format("2006-01-02-150405")
-	fileName := fmt.Sprintf("%s_%s_%s.%s", agentPrefix, dateStr, randomHex, ext)
-	outPath := filepath.Join(a.Config.OutputDir, fileName)
-
 	os.MkdirAll(a.Config.OutputDir, 0755)
-	err = os.WriteFile(outPath, data, 0644)
-	if err == nil {
-		a.Log("Saved image to: " + outPath)
+
+	var primaryPath string
+
+	if b64 != "" {
+		data, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			return err
+		}
+
+		ext := "jpg"
+		if strings.Contains(strings.ToLower(mime), "png") {
+			ext = "png"
+		}
+
+		fileName := fmt.Sprintf("%s_%s_%s.%s", agentPrefix, dateStr, randomHex, ext)
+		primaryPath = filepath.Join(a.Config.OutputDir, fileName)
+
+		if err := os.WriteFile(primaryPath, data, 0644); err != nil {
+			return err
+		}
+		a.Log("Saved image to: " + primaryPath)
 
 		if task.ReturnThought {
 			if aiText != "" {
-				txtPath := outPath[:len(outPath)-len(ext)-1] + ".txt"
+				txtPath := primaryPath[:len(primaryPath)-len(ext)-1] + ".txt"
 				if err := os.WriteFile(txtPath, []byte(aiText), 0644); err != nil {
 					a.Log("Error saving thoughts: " + err.Error())
 				} else {
@@ -1042,10 +1062,21 @@ func (a *App) SaveBase64Image(b64, mime string, task *TaskInfo, aiText string) e
 				a.Log(fmt.Sprintf("Warning: Thought process requested for task %d but no text was returned.", task.ID))
 			}
 		}
+	} else if aiText != "" {
+		// Text only response
+		fileName := fmt.Sprintf("%s_%s_%s.txt", agentPrefix, dateStr, randomHex)
+		primaryPath = filepath.Join(a.Config.OutputDir, fileName)
 
-		a.Mu.Lock()
-		task.LastSavedPath = outPath
-		a.Mu.Unlock()
+		if err := os.WriteFile(primaryPath, []byte(aiText), 0644); err != nil {
+			return err
+		}
+		a.Log("Saved AI response (text only) to: " + primaryPath)
+	} else {
+		return fmt.Errorf("empty response (no image or text)")
 	}
-	return err
+
+	a.Mu.Lock()
+	task.LastSavedPath = primaryPath
+	a.Mu.Unlock()
+	return nil
 }

@@ -134,8 +134,8 @@ func DefaultConfig() *Config {
 		OutputDir:        "img",
 		DefaultPrompt:    "everyone stands on top of a large pile of burgers. the burgers deform under load.",
 		DefaultNegPrompt: "distorted faces, blurry, distortion, low quality, watermarks, missing limbs, extra limbs, deformities, floating people or objects, cropping body parts",
-		EncourageEdt:     "You are a professional image-restoration engine. Please apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear and perfectly aligned with the reference without looking plastic. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage.",
-		EncourageGen:     "You are a world-class visual concept artist. Please transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition.",
+		EncourageEdt:     "You are a professional image-restoration engine. Please apply the 'USER DIRECTIVE' while maintaining strict structural integrity. Focus on high-fidelity surface rendering and cinematic lighting. Ensure all facial features are sharp, clear and perfectly aligned with the reference without looking plastic. Resolve blur into crisp, clean, 8k-resolution details. Maintain 100% adherence to the subject's identity. If the directive involves clothing, ensure the new attire is rendered with realistic fabric textures and consistent coverage. Your reasoning should always lead to an image generation call.",
+		EncourageGen:     "You are a world-class visual concept artist. Please transform the user's prompt into a vivid, high-fidelity masterpiece. Prioritize cinematic lighting, photorealistic textures, and perfect anatomical detail. Every output must be rendered with the clarity of an 8k digital sensor. Interpret abstract concepts as concrete, visually dense scenes. Ensure all subjects, especially faces and hands, are rendered with sharp focus and professional-grade definition. Your reasoning should always lead to an image generation call.",
 		Debug: false,
 		SafetySettings: []SafetySetting{
 			{"HARM_CATEGORY_HARASSMENT", "BLOCK_NONE"},
@@ -144,7 +144,7 @@ func DefaultConfig() *Config {
 			{"HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_NONE"},
 		},
 		Temperature:     1.0,
-		TopP:            0.9,
+		TopP:            0.95,
 		TopK:            40,
 		MaxOutputTokens: 8192,
 

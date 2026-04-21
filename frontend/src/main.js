@@ -530,9 +530,10 @@ function setupEventListeners() {
     // Disable custom context menu on inputs/textareas to allow native spellcheck/clipboard
     document.addEventListener('contextmenu', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-            // Let native context menu through
+            // Let native context menu through and stop propagation to prevent custom menus
             const menu = document.getElementById('context-menu');
             if (menu) menu.style.display = 'none';
+            e.stopPropagation();
         }
     }, true);
 
