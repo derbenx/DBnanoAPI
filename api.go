@@ -136,9 +136,12 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 	}
 
 	// Check file existence
-	if task.SourcePath != "" && task.SourcePath != "<GENERATE>" {
+	if task.SourcePath != "" {
 		paths := strings.Split(task.SourcePath, "|")
 		for _, p := range paths {
+			if p == "<GENERATE>" {
+				continue
+			}
 			if _, err := os.Stat(p); os.IsNotExist(err) {
 				return fmt.Errorf("file not found: %s", p)
 			}
@@ -207,9 +210,12 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 
 	// Check file existence for all tasks
 	for _, t := range tasks {
-		if t.SourcePath != "" && t.SourcePath != "<GENERATE>" {
+		if t.SourcePath != "" {
 			paths := strings.Split(t.SourcePath, "|")
 			for _, p := range paths {
+				if p == "<GENERATE>" {
+					continue
+				}
 				if _, err := os.Stat(p); os.IsNotExist(err) {
 					return fmt.Errorf("task %d: file not found: %s", t.ID, p)
 				}
@@ -406,10 +412,19 @@ func (a *App) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
 	parts := []Part{{Text: fullPrompt}}
 	encourage := a.Config.EncourageGen
 
-	if task.SourcePath != "" && task.SourcePath != "<GENERATE>" {
-		encourage = a.Config.EncourageEdt
+	modalities := []string{"IMAGE"}
+	if task.ReturnThought {
+		modalities = append(modalities, "TEXT")
+	}
+
+	if task.SourcePath != "" {
+		hasRealImages := false
 		paths := strings.Split(task.SourcePath, "|")
 		for _, p := range paths {
+			if p == "<GENERATE>" {
+				continue
+			}
+			hasRealImages = true
 			data, err := os.ReadFile(p)
 			if err != nil {
 				return nil, fmt.Errorf("could not read image %s: %v", p, err)
@@ -422,6 +437,9 @@ func (a *App) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
 				},
 			})
 		}
+		if hasRealImages {
+			encourage = a.Config.EncourageEdt
+		}
 	}
 
 	req := &GeminiRequest{
@@ -432,7 +450,7 @@ func (a *App) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
 		SafetySettings: a.Config.SafetySettings,
 		GenerationConfig: &GenerationConfig{
 			CandidateCount:     1,
-			ResponseModalities: []string{"IMAGE"},
+			ResponseModalities: modalities,
 			Temperature:        a.Config.Temperature,
 			TopP:               a.Config.TopP,
 			TopK:               a.Config.TopK,
@@ -701,11 +719,12 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 	var taskID int
 	fmt.Sscanf(customID, "task_%d_", &taskID)
 
-	// Nested parsing for image data
+	// Nested parsing for image and text data
 	var resp struct {
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
+					Text       string `json:"text,omitempty"`
 					InlineData struct {
 						MimeType string `json:"mimeType"`
 						Data     string `json:"data"`
@@ -717,32 +736,59 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 
 	if err := json.Unmarshal(respBody, &resp); err == nil && len(resp.Candidates) > 0 {
 		cand := resp.Candidates[0]
+		a.Mu.Lock()
+		var targetTask *TaskInfo
+		for _, t := range a.Tasks {
+			if t.ID == taskID {
+				targetTask = t
+				break
+			}
+		}
+		a.Mu.Unlock()
+
+		if targetTask == nil {
+			return
+		}
+
+		var imageData []byte
+		var mimeType string
+		var aiText string
+
 		for _, part := range cand.Content.Parts {
 			if part.InlineData.Data != "" {
-				data, _ := base64.StdEncoding.DecodeString(part.InlineData.Data)
-				ext := "jpg"
-				if strings.Contains(strings.ToLower(part.InlineData.MimeType), "png") {
-					ext = "png"
-				}
-
-				randomHex := fmt.Sprintf("%02x", time.Now().UnixNano()%256)
-				fileName := fmt.Sprintf("Batch_%s_%d%s.%s", customID, time.Now().Unix(), randomHex, ext)
-				outPath := filepath.Join(a.Config.OutputDir, fileName)
-
-				os.MkdirAll(a.Config.OutputDir, 0755)
-				os.WriteFile(outPath, data, 0644)
-				a.Log("Saved batch image: " + outPath)
-
-				a.Mu.Lock()
-				for _, t := range a.Tasks {
-					if t.ID == taskID {
-						t.LastSavedPath = outPath
-						t.Status = "Success"
-						break
-					}
-				}
-				a.Mu.Unlock()
+				imageData, _ = base64.StdEncoding.DecodeString(part.InlineData.Data)
+				mimeType = part.InlineData.MimeType
+			} else if part.Text != "" {
+				aiText += part.Text
 			}
+		}
+
+		if imageData != nil {
+			agentPrefix := strings.ReplaceAll(targetTask.Agent, " ", "_")
+			ext := "jpg"
+			if strings.Contains(strings.ToLower(mimeType), "png") {
+				ext = "png"
+			}
+
+			randomHex := fmt.Sprintf("%02x", time.Now().UnixNano()%256)
+			dateStr := time.Now().Format("2006-01-02-150405")
+			fileName := fmt.Sprintf("%s_%s_%s.%s", agentPrefix, dateStr, randomHex, ext)
+			outPath := filepath.Join(a.Config.OutputDir, fileName)
+
+			os.MkdirAll(a.Config.OutputDir, 0755)
+			os.WriteFile(outPath, imageData, 0644)
+			a.Log("Saved batch image: " + outPath)
+
+			if aiText != "" && targetTask.ReturnThought {
+				txtPath := outPath[:len(outPath)-len(ext)-1] + ".txt"
+				os.WriteFile(txtPath, []byte(aiText), 0644)
+				a.Log("Saved AI thoughts: " + txtPath)
+			}
+
+			a.Mu.Lock()
+			targetTask.LastSavedPath = outPath
+			targetTask.Status = "Success"
+			a.Mu.Unlock()
 		}
 	}
 }
@@ -898,6 +944,7 @@ func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
 		Candidates []struct {
 			Content struct {
 				Parts []struct {
+					Text       string `json:"text,omitempty"`
 					InlineData struct {
 						MimeType string `json:"mimeType"`
 						Data     string `json:"data"`
@@ -913,10 +960,21 @@ func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
 		if cand.FinishReason != "" && cand.FinishReason != "STOP" && cand.FinishReason != "SUCCESS" {
 			return fmt.Errorf("finish reason: %s", cand.FinishReason)
 		}
+		var imageData string
+		var mimeType string
+		var aiText string
+
 		for _, part := range cand.Content.Parts {
 			if part.InlineData.Data != "" {
-				return a.SaveBase64Image(part.InlineData.Data, part.InlineData.MimeType, task.ID)
+				imageData = part.InlineData.Data
+				mimeType = part.InlineData.MimeType
+			} else if part.Text != "" {
+				aiText += part.Text
 			}
+		}
+
+		if imageData != "" {
+			return a.SaveBase64Image(imageData, mimeType, task, aiText)
 		}
 	}
 
@@ -929,39 +987,43 @@ func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
 	}
 	if err := json.Unmarshal(body, &imagenResp); err == nil && len(imagenResp.Predictions) > 0 {
 		pred := imagenResp.Predictions[0]
-		return a.SaveBase64Image(pred.BytesBase64Encoded, pred.MimeType, task.ID)
+		return a.SaveBase64Image(pred.BytesBase64Encoded, pred.MimeType, task, "")
 	}
 
 	a.LogToFile(fmt.Sprintf("DEBUG: No image found in response for task %d. Body: %s", task.ID, string(body)))
 	return fmt.Errorf("no image data in response (Check debug.log for body)")
 }
 
-func (a *App) SaveBase64Image(b64, mime string, taskID int) error {
+func (a *App) SaveBase64Image(b64, mime string, task *TaskInfo, aiText string) error {
 	data, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return err
 	}
 
+	agentPrefix := strings.ReplaceAll(task.Agent, " ", "_")
 	ext := "jpg"
 	if strings.Contains(strings.ToLower(mime), "png") {
 		ext = "png"
 	}
 
 	randomHex := fmt.Sprintf("%02x", time.Now().UnixNano()%256)
-	fileName := fmt.Sprintf("GoTask_%d_%d%s.%s", taskID, time.Now().Unix(), randomHex, ext)
+	dateStr := time.Now().Format("2006-01-02-150405")
+	fileName := fmt.Sprintf("%s_%s_%s.%s", agentPrefix, dateStr, randomHex, ext)
 	outPath := filepath.Join(a.Config.OutputDir, fileName)
 
 	os.MkdirAll(a.Config.OutputDir, 0755)
 	err = os.WriteFile(outPath, data, 0644)
 	if err == nil {
 		a.Log("Saved image to: " + outPath)
-		a.Mu.Lock()
-		for _, t := range a.Tasks {
-			if t.ID == taskID {
-				t.LastSavedPath = outPath
-				break
-			}
+
+		if aiText != "" && task.ReturnThought {
+			txtPath := outPath[:len(outPath)-len(ext)-1] + ".txt"
+			os.WriteFile(txtPath, []byte(aiText), 0644)
+			a.Log("Saved AI thoughts: " + txtPath)
 		}
+
+		a.Mu.Lock()
+		task.LastSavedPath = outPath
 		a.Mu.Unlock()
 	}
 	return err

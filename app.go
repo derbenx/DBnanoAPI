@@ -411,7 +411,7 @@ func (a *App) LoadSessionUI() {
 	}
 }
 
-func (a *App) AddTask(imgIDs string, agent string, size string, ratio string, prompt string, negPrompt string, paths string) {
+func (a *App) AddTask(imgIDs string, agent string, size string, ratio string, prompt string, negPrompt string, paths string, returnThought bool) {
 	a.Mu.Lock()
 	ids := strings.Split(imgIDs, "+")
 	for _, id := range ids {
@@ -434,6 +434,7 @@ func (a *App) AddTask(imgIDs string, agent string, size string, ratio string, pr
 		Prompt:         prompt,
 		NegativePrompt: negPrompt,
 		SourcePath:     paths,
+		ReturnThought:  returnThought,
 	}
 	a.Tasks = append(a.Tasks, newTask)
 	a.NextTaskID++
@@ -454,6 +455,7 @@ func (a *App) UpdateTask(task *TaskInfo) {
 			t.Ratio = task.Ratio
 			t.Prompt = task.Prompt
 			t.NegativePrompt = task.NegativePrompt
+			t.ReturnThought = task.ReturnThought
 
 			// Resolve SourcePath from ImgIDs
 			var paths []string

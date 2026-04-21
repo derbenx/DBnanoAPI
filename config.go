@@ -165,5 +165,6 @@ func DefaultConfig() *Config {
 		ChatRememberInitial: false,
 		ChatMemorySlots:     3,
 		ChatSystemPrompt:    "You are a helpful and professional assistant. Keep your answers concise and accurate.",
+		ReturnThought:       false,
 	}
 }

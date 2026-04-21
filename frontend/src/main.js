@@ -406,7 +406,7 @@ function setupEventListeners() {
         const agent = parts.slice(0, -1).join(" ");
         const size = parts[parts.length - 1];
 
-        await AddTask(imgIDs, agent, size, ratio, prompt, negPrompt, paths);
+        await AddTask(imgIDs, agent, size, ratio, prompt, negPrompt, paths, returnThought);
         addLog("Task added for: " + imgIDs);
     };
 
@@ -432,6 +432,7 @@ function setupEventListeners() {
             }
         }, 2000);
         task.Prompt = document.getElementById('prompt').value;
+        task.ReturnThought = document.getElementById('return-thought').checked;
         task.NegativePrompt = document.getElementById('neg-prompt').value;
         const tier = document.getElementById('tier-select').value;
         const parts = tier.split(" ");
@@ -448,6 +449,7 @@ function setupEventListeners() {
 
     window.SaveSettings = async () => {
         const c = state.config;
+        c.return_thought = document.getElementById('settings-return-thought').checked;
         c.api_key_paid = document.getElementById('settings-api-key-paid').value;
         c.api_key_free = document.getElementById('settings-api-key-free').value;
         c.output_dir = document.getElementById('settings-output-dir').value;
@@ -486,6 +488,38 @@ function setupEventListeners() {
     };
 
 
+    // Vertical Resizer (Main)
+    const mainResizer = document.getElementById('main-resizer');
+    const leftPanel = document.getElementById('create-left');
+
+    if (mainResizer && leftPanel) {
+        let isResizing = false;
+
+        mainResizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            document.body.style.cursor = 'col-resize';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const containerWidth = document.querySelector('.main-content').offsetWidth;
+            let offset = e.clientX / containerWidth;
+            if (offset < 0.2) offset = 0.2;
+            if (offset > 0.8) offset = 0.8;
+
+            state.config.split_offset_main = offset;
+            leftPanel.style.width = (offset * 100) + '%';
+        });
+
+        document.addEventListener('mouseup', async () => {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = 'default';
+                await SaveConfig(state.config);
+            }
+        });
+    }
+
     // Global click to hide context menu
     document.addEventListener('click', () => {
         const menu = document.getElementById('context-menu');
@@ -520,6 +554,13 @@ function setupEventListeners() {
 
 function populateSettings(c) {
     if (!c) return;
+
+    document.getElementById('settings-return-thought').checked = !!c.return_thought;
+
+    if (c.split_offset_main) {
+        const left = document.getElementById('create-left');
+        if (left) left.style.width = (c.split_offset_main * 100) + '%';
+    }
     document.getElementById('settings-api-key-paid').value = c.api_key_paid || '';
     document.getElementById('settings-api-key-free').value = c.api_key_free || '';
 
@@ -789,6 +830,7 @@ function renderTaskList() {
 async function populateEditor(task) {
     document.getElementById('source-ids').value = task.ImgIDs;
     document.getElementById('prompt').value = task.Prompt;
+    document.getElementById('return-thought').checked = !!task.ReturnThought;
     document.getElementById('neg-prompt').value = task.NegativePrompt;
     document.getElementById('tier-select').value = task.Agent + " " + task.Size;
     filterRatios(task.Agent);
@@ -800,6 +842,7 @@ async function populateEditor(task) {
 async function clearEditor() {
     document.getElementById('source-ids').value = '';
     document.getElementById('prompt').value = '';
+    document.getElementById('return-thought').checked = state.config.return_thought;
     document.getElementById('neg-prompt').value = '';
     document.getElementById('tier-select').selectedIndex = 0;
     const tier = document.getElementById('tier-select').value;

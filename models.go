@@ -45,6 +45,7 @@ type Config struct {
 	ChatRememberInitial bool `json:"chat_remember_initial"`
 	ChatMemorySlots     int  `json:"chat_memory_slots"`
 	ChatSystemPrompt    string `json:"chat_system_prompt"`
+	ReturnThought       bool   `json:"return_thought"`
 }
 
 type ImageInfo struct {
@@ -73,6 +74,7 @@ type TaskInfo struct {
 	SourcePath     string
 	RunningCount   int
 	LastSavedPath  string
+	ReturnThought  bool
 }
 
 type BatchJob struct {

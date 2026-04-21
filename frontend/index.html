@@ -16,7 +16,7 @@
         </div>
 
         <div id="tab-create" class="tab-content main-content">
-            <div class="left-panel">
+            <div class="left-panel" id="create-left">
                 <div class="top-split">
                     <div class="panel-header">
                         <span>Images</span>
@@ -65,14 +65,21 @@
                     <button id="btn-run-batch" style="background-color: #8e44ad">RUN BATCH</button>
                 </div>
             </div>
-            <div class="right-panel">
+            <div id="main-resizer" class="resizer-v"></div>
+            <div class="right-panel" id="create-right">
                 <div id="editor-container">
                     <div class="input-field">
                         <label>Source IDs:</label>
                         <input type="text" id="source-ids" onchange="window.UpdateTaskFromUI()">
                     </div>
                     <div class="input-field">
-                        <label>Positive Prompt:</label>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
+                            <label style="margin-bottom: 0;">Positive Prompt:</label>
+                            <div style="display: flex; align-items: center; gap: 5px; font-size: 0.85em;">
+                                <label style="margin-bottom: 0; font-weight: normal;">Return Thought:</label>
+                                <input type="checkbox" id="return-thought" onchange="window.UpdateTaskFromUI()">
+                            </div>
+                        </div>
                         <textarea id="prompt" rows="10" onchange="window.UpdateTaskFromUI()"></textarea>
                     </div>
                     <div class="input-field">
@@ -213,6 +220,10 @@
                         <div style="display: flex; gap: 5px; flex: 1;">
                             <input type="text" id="settings-output-dir" style="flex: 1;">
                         </div>
+                    </div>
+                    <div class="input-field">
+                        <label>Return AI Thought (Global Default):</label>
+                        <input type="checkbox" id="settings-return-thought">
                     </div>
                     <div class="input-field">
                         <label>Debug Mode:</label>
