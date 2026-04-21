@@ -962,6 +962,23 @@ func (a *App) HasGeneratedImage(taskID int) bool {
 }
 
 func (a *App) getLastGeneratedImagePath(taskID int) string {
+	a.Mu.RLock()
+	var lastPath string
+	for _, t := range a.Tasks {
+		if t.ID == taskID {
+			lastPath = t.LastSavedPath
+			break
+		}
+	}
+	a.Mu.RUnlock()
+
+	if lastPath != "" {
+		if _, err := os.Stat(lastPath); err == nil {
+			return lastPath
+		}
+	}
+
+	// Fallback to searching the directory if path is missing or invalid
 	out := a.Config.OutputDir
 	if out == "" {
 		out = "img"
@@ -972,15 +989,14 @@ func (a *App) getLastGeneratedImagePath(taskID int) string {
 	}
 	var lastFile string
 	var lastTime time.Time
-	prefix := fmt.Sprintf("GoTask_%d_", taskID)
-	batchPrefix := fmt.Sprintf("Batch_task_%d_", taskID)
+	// Search for any file in the output dir that might match the task
+	// Since we switched to Agent naming, we look for anything with the right timestamp or task ID if we had it
+	// But mostly we rely on LastSavedPath now.
 	for _, f := range files {
-		if strings.HasPrefix(f.Name(), prefix) || strings.HasPrefix(f.Name(), batchPrefix) {
-			info, _ := f.Info()
-			if info.ModTime().After(lastTime) {
-				lastTime = info.ModTime()
-				lastFile = filepath.Join(out, f.Name())
-			}
+		info, _ := f.Info()
+		if info.ModTime().After(lastTime) {
+			lastTime = info.ModTime()
+			lastFile = filepath.Join(out, f.Name())
 		}
 	}
 	return lastFile

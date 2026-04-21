@@ -405,6 +405,7 @@ function setupEventListeners() {
         const parts = tier.split(" ");
         const agent = parts.slice(0, -1).join(" ");
         const size = parts[parts.length - 1];
+        const returnThought = document.getElementById('return-thought').checked;
 
         await AddTask(imgIDs, agent, size, ratio, prompt, negPrompt, paths, returnThought);
         addLog("Task added for: " + imgIDs);

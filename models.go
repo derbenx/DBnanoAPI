@@ -60,21 +60,21 @@ type ImageInfo struct {
 }
 
 type TaskInfo struct {
-	ID             int // Internal index
-	ImgIDs         string
-	Agent          string
-	Size           string
-	Ratio          string
-	Status         string
-	Cost           float64
-	Prompt         string
-	NegativePrompt string
-	Format         string
-	Disabled       bool
-	SourcePath     string
-	RunningCount   int
-	LastSavedPath  string
-	ReturnThought  bool
+	ID             int     `json:"ID"`
+	ImgIDs         string  `json:"ImgIDs"`
+	Agent          string  `json:"Agent"`
+	Size           string  `json:"Size"`
+	Ratio          string  `json:"Ratio"`
+	Status         string  `json:"Status"`
+	Cost           float64 `json:"Cost"`
+	Prompt         string  `json:"Prompt"`
+	NegativePrompt string  `json:"NegativePrompt"`
+	Format         string  `json:"Format"`
+	Disabled       bool    `json:"Disabled"`
+	SourcePath     string  `json:"SourcePath"`
+	RunningCount   int     `json:"RunningCount"`
+	LastSavedPath  string  `json:"LastSavedPath"`
+	ReturnThought  bool    `json:"ReturnThought"`
 }
 
 type BatchJob struct {

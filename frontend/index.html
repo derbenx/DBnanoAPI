@@ -86,38 +86,40 @@
                         <label>Negative Prompt:</label>
                         <textarea id="neg-prompt" rows="3" onchange="window.UpdateTaskFromUI()"></textarea>
                     </div>
-                    <div class="input-field">
-                        <label>Tier:</label>
-                        <select id="tier-select" onchange="window.UpdateTaskFromUI()">
-                            <option>Nano Flash 1K</option>
-                            <option>Nano Pro 1K</option>
-                            <option>Nano Pro 2K</option>
-                            <option>Nano Pro 4K</option>
-                            <option>Nano 2 1K</option>
-                            <option>Nano 2 2K</option>
-                            <option>Nano 2 4K</option>
-                            <option>Imagen 2K</option>
-                            <option>Imagen Ultra 2K</option>
-                        </select>
-                    </div>
-                    <div class="input-field">
-                        <label>Aspect Ratio:</label>
-                        <select id="ratio-select" onchange="window.UpdateTaskFromUI(); window.updateRatioPreview()">
-                            <option>1:8</option>
-                            <option>1:4</option>
-                            <option>9:16</option>
-                            <option>2:3</option>
-                            <option>3:4</option>
-                            <option>4:5</option>
-                            <option>1:1</option>
-                            <option>5:4</option>
-                            <option>4:3</option>
-                            <option>3:2</option>
-                            <option>16:9</option>
-                            <option>21:9</option>
-                            <option>4:1</option>
-                            <option>8:1</option>
-                        </select>
+                    <div style="display: flex; gap: 10px;">
+                        <div class="input-field" style="flex: 1;">
+                            <label>Tier:</label>
+                            <select id="tier-select" onchange="window.UpdateTaskFromUI()">
+                                <option>Nano Flash 1K</option>
+                                <option>Nano Pro 1K</option>
+                                <option>Nano Pro 2K</option>
+                                <option>Nano Pro 4K</option>
+                                <option>Nano 2 1K</option>
+                                <option>Nano 2 2K</option>
+                                <option>Nano 2 4K</option>
+                                <option>Imagen 2K</option>
+                                <option>Imagen Ultra 2K</option>
+                            </select>
+                        </div>
+                        <div class="input-field" style="flex: 1;">
+                            <label>Aspect Ratio:</label>
+                            <select id="ratio-select" onchange="window.UpdateTaskFromUI(); window.updateRatioPreview()">
+                                <option>1:8</option>
+                                <option>1:4</option>
+                                <option>9:16</option>
+                                <option>2:3</option>
+                                <option>3:4</option>
+                                <option>4:5</option>
+                                <option>1:1</option>
+                                <option>5:4</option>
+                                <option>4:3</option>
+                                <option>3:2</option>
+                                <option>16:9</option>
+                                <option>21:9</option>
+                                <option>4:1</option>
+                                <option>8:1</option>
+                            </select>
+                        </div>
                     </div>
                     <div id="ratio-preview-container" style="margin-top: 10px; display: flex; justify-content: center; background: #1a2533; border: 1px solid #34495e; padding: 10px; border-radius: 5px;">
                         <canvas id="ratio-canvas" width="120" height="120" style="background-color: #0d1117; border: 1px dashed #555;"></canvas>

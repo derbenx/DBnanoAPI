@@ -408,7 +408,11 @@ func getMimeType(path string) string {
 }
 
 func (a *App) BuildGeminiRequest(task *TaskInfo) (*GeminiRequest, error) {
-	fullPrompt := fmt.Sprintf("USER DIRECTIVE: %s. Aspect Ratio: %s. Avoid: %s", task.Prompt, task.Ratio, task.NegativePrompt)
+	prompt := task.Prompt
+	if task.ReturnThought {
+		prompt += "\n\nCRITICAL: Before generating the image, you MUST provide a detailed written analysis and description of your creative process and how you are interpreting the user's directive. This text will be saved as your 'creative thought'."
+	}
+	fullPrompt := fmt.Sprintf("USER DIRECTIVE: %s. Aspect Ratio: %s. Avoid: %s", prompt, task.Ratio, task.NegativePrompt)
 	parts := []Part{{Text: fullPrompt}}
 	encourage := a.Config.EncourageGen
 
@@ -725,7 +729,7 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 			Content struct {
 				Parts []struct {
 					Text       string `json:"text,omitempty"`
-					InlineData struct {
+					InlineData *struct {
 						MimeType string `json:"mimeType"`
 						Data     string `json:"data"`
 					} `json:"inlineData"`
@@ -755,7 +759,7 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 		var aiText string
 
 		for _, part := range cand.Content.Parts {
-			if part.InlineData.Data != "" {
+			if part.InlineData != nil && part.InlineData.Data != "" {
 				imageData, _ = base64.StdEncoding.DecodeString(part.InlineData.Data)
 				mimeType = part.InlineData.MimeType
 			} else if part.Text != "" {
@@ -776,13 +780,23 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 			outPath := filepath.Join(a.Config.OutputDir, fileName)
 
 			os.MkdirAll(a.Config.OutputDir, 0755)
-			os.WriteFile(outPath, imageData, 0644)
-			a.Log("Saved batch image: " + outPath)
+			if err := os.WriteFile(outPath, imageData, 0644); err != nil {
+				a.Log(fmt.Sprintf("Error saving image for task %d: %v", targetTask.ID, err))
+			} else {
+				a.Log(fmt.Sprintf("Saved task %d image: %s", targetTask.ID, outPath))
+			}
 
-			if aiText != "" && targetTask.ReturnThought {
-				txtPath := outPath[:len(outPath)-len(ext)-1] + ".txt"
-				os.WriteFile(txtPath, []byte(aiText), 0644)
-				a.Log("Saved AI thoughts: " + txtPath)
+			if targetTask.ReturnThought {
+				if aiText != "" {
+					txtPath := outPath[:len(outPath)-len(ext)-1] + ".txt"
+					if err := os.WriteFile(txtPath, []byte(aiText), 0644); err != nil {
+						a.Log("Error saving thoughts: " + err.Error())
+					} else {
+						a.Log("Saved AI thoughts: " + txtPath)
+					}
+				} else {
+					a.Log(fmt.Sprintf("Warning: Thought process requested for task %d but no text was returned.", targetTask.ID))
+				}
 			}
 
 			a.Mu.Lock()
@@ -945,7 +959,7 @@ func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
 			Content struct {
 				Parts []struct {
 					Text       string `json:"text,omitempty"`
-					InlineData struct {
+					InlineData *struct {
 						MimeType string `json:"mimeType"`
 						Data     string `json:"data"`
 					} `json:"inlineData"`
@@ -965,7 +979,7 @@ func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
 		var aiText string
 
 		for _, part := range cand.Content.Parts {
-			if part.InlineData.Data != "" {
+			if part.InlineData != nil && part.InlineData.Data != "" {
 				imageData = part.InlineData.Data
 				mimeType = part.InlineData.MimeType
 			} else if part.Text != "" {
@@ -1016,10 +1030,17 @@ func (a *App) SaveBase64Image(b64, mime string, task *TaskInfo, aiText string) e
 	if err == nil {
 		a.Log("Saved image to: " + outPath)
 
-		if aiText != "" && task.ReturnThought {
-			txtPath := outPath[:len(outPath)-len(ext)-1] + ".txt"
-			os.WriteFile(txtPath, []byte(aiText), 0644)
-			a.Log("Saved AI thoughts: " + txtPath)
+		if task.ReturnThought {
+			if aiText != "" {
+				txtPath := outPath[:len(outPath)-len(ext)-1] + ".txt"
+				if err := os.WriteFile(txtPath, []byte(aiText), 0644); err != nil {
+					a.Log("Error saving thoughts: " + err.Error())
+				} else {
+					a.Log("Saved AI thoughts: " + txtPath)
+				}
+			} else {
+				a.Log(fmt.Sprintf("Warning: Thought process requested for task %d but no text was returned.", task.ID))
+			}
 		}
 
 		a.Mu.Lock()
