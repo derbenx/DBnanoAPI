@@ -6,8 +6,8 @@ export function AddImages(arg1) {
   return window['go']['main']['App']['AddImages'](arg1);
 }
 
-export function AddTask(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
-  return window['go']['main']['App']['AddTask'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+export function AddTask(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) {
+  return window['go']['main']['App']['AddTask'](arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
 }
 
 export function BuildGeminiRequest(arg1) {
@@ -74,8 +74,8 @@ export function DeleteTask(arg1) {
   return window['go']['main']['App']['DeleteTask'](arg1);
 }
 
-export function DownloadBatchResults(arg1) {
-  return window['go']['main']['App']['DownloadBatchResults'](arg1);
+export function DownloadBatchResults(arg1, arg2) {
+  return window['go']['main']['App']['DownloadBatchResults'](arg1, arg2);
 }
 
 export function DuplicateTask(arg1) {
@@ -114,12 +114,20 @@ export function GetModelID(arg1) {
   return window['go']['main']['App']['GetModelID'](arg1);
 }
 
+export function GetRunningCosts() {
+  return window['go']['main']['App']['GetRunningCosts']();
+}
+
 export function GetTasks() {
   return window['go']['main']['App']['GetTasks']();
 }
 
 export function HandleError(arg1, arg2) {
   return window['go']['main']['App']['HandleError'](arg1, arg2);
+}
+
+export function IncrementRunningCost(arg1, arg2) {
+  return window['go']['main']['App']['IncrementRunningCost'](arg1, arg2);
 }
 
 export function LoadJobs() {
@@ -146,8 +154,8 @@ export function OpenImageFolder() {
   return window['go']['main']['App']['OpenImageFolder']();
 }
 
-export function ProcessBatchItem(arg1, arg2) {
-  return window['go']['main']['App']['ProcessBatchItem'](arg1, arg2);
+export function ProcessBatchItem(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ProcessBatchItem'](arg1, arg2, arg3);
 }
 
 export function ProcessDroppedFiles(arg1) {
@@ -156,6 +164,10 @@ export function ProcessDroppedFiles(arg1) {
 
 export function ProcessResponse(arg1, arg2) {
   return window['go']['main']['App']['ProcessResponse'](arg1, arg2);
+}
+
+export function ResetRunningCost() {
+  return window['go']['main']['App']['ResetRunningCost']();
 }
 
 export function RunBatch() {
@@ -170,8 +182,8 @@ export function RunTasks() {
   return window['go']['main']['App']['RunTasks']();
 }
 
-export function SaveBase64Image(arg1, arg2, arg3) {
-  return window['go']['main']['App']['SaveBase64Image'](arg1, arg2, arg3);
+export function SaveBase64Image(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['SaveBase64Image'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SaveConfig(arg1) {

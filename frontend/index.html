@@ -13,6 +13,11 @@
             <div class="tab" data-tab="settings">Settings</div>
             <div class="tab" data-tab="chat">Chat</div>
             <div class="tab" data-tab="help">Help</div>
+            <div style="flex: 1"></div>
+            <div class="running-total-container">
+                <span id="running-total-display">Total: $0.0000</span>
+                <button onclick="window.ResetRunningCost()" title="Reset Running Total" style="padding: 2px 8px; font-size: 0.8em; margin-left: 10px; background-color: #e74c3c;">Reset</button>
+            </div>
         </div>
 
         <div id="tab-create" class="tab-content main-content">
@@ -264,12 +269,47 @@
                         </div>
                     </div>
                     <div class="input-field">
+                        <label>Paid API Endpoint:</label>
+                        <select id="settings-api-endpoint-paid" onchange="window.ToggleVertexFields('paid')" title="Which endpoint is your API key for?">
+                            <option value="cloud">Google Cloud Gemini API</option>
+                            <option value="vertex">Google Vertex AI API</option>
+                        </select>
+                    </div>
+                    <div id="vertex-fields-paid" style="display: none; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 5px; margin-bottom: 10px;">
+                        <div class="input-field">
+                            <label>Project ID:</label>
+                            <input type="text" id="settings-vertex-project-paid">
+                        </div>
+                        <div class="input-field">
+                            <label>Region:</label>
+                            <input type="text" id="settings-vertex-region-paid">
+                        </div>
+                    </div>
+
+                    <div class="input-field">
                         <label>Free API Key:</label>
                         <div style="display: flex; gap: 5px; flex: 1;">
                             <input type="password" id="settings-api-key-free" style="flex: 1;">
                             <button onclick="window.TogglePassword('settings-api-key-free')" style="padding: 5px 8px;">👁</button>
                             <button onclick="window.TestConnection('free')" style="padding: 5px 10px;">Test</button>
                             <span id="test-api-status-free" style="font-weight: bold; font-size: 0.9em; min-width: 60px;"></span>
+                        </div>
+                    </div>
+                    <div class="input-field">
+                        <label>Free API Endpoint:</label>
+                        <select id="settings-api-endpoint-free" onchange="window.ToggleVertexFields('free')" title="Which endpoint is your API key for?">
+                            <option value="cloud">Google Cloud Gemini API</option>
+                            <option value="vertex">Google Vertex AI API</option>
+                        </select>
+                    </div>
+                    <div id="vertex-fields-free" style="display: none; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 5px; margin-bottom: 10px;">
+                        <div class="input-field">
+                            <label>Project ID:</label>
+                            <input type="text" id="settings-vertex-project-free">
+                        </div>
+                        <div class="input-field">
+                            <label>Region:</label>
+                            <input type="text" id="settings-vertex-region-free">
                         </div>
                     </div>
                     <div class="input-field">
@@ -281,6 +321,10 @@
                     <div class="input-field">
                         <label>Return AI Thought (Global Default):</label>
                         <input type="checkbox" id="settings-return-thought">
+                    </div>
+                    <div class="input-field">
+                        <label>Persist Running Total:</label>
+                        <input type="checkbox" id="settings-persist-running-total">
                     </div>
                     <div class="input-field">
                         <label>Debug Mode:</label>

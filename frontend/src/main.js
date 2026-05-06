@@ -27,6 +27,8 @@ import {
     HasGeneratedImage,
     ClearFinishedJobs,
     GetBatchJobs,
+    ResetRunningCost,
+    GetRunningCosts,
     OpenImageFolder,
     SendChatMessage,
     CalculateChatCost,
@@ -55,6 +57,7 @@ let state = {
 window.addEventListener('DOMContentLoaded', async () => {
     try {
         state.config = await GetConfig();
+        await updateRunningCostDisplay();
         populateSettings(state.config);
 
         OnFileDrop((x, y, paths) => {
@@ -127,6 +130,10 @@ function setupEventListeners() {
     EventsOn("batch_timer", (seconds) => {
         const timerCont = document.getElementById('batch-timer-container');
         if (timerCont) timerCont.innerText = `Next check in: ${seconds}s`;
+    });
+
+    EventsOn("cost_updated", async () => {
+        await updateRunningCostDisplay();
     });
 
     EventsOn("test_api_started", (mode) => {
@@ -202,6 +209,29 @@ function setupEventListeners() {
         const input = document.getElementById(id);
         if (input) {
             input.type = input.type === 'password' ? 'text' : 'password';
+        }
+    };
+
+    window.ToggleVertexFields = (mode) => {
+        const endpoint = document.getElementById('settings-api-endpoint-' + mode).value;
+        const div = document.getElementById('vertex-fields-' + mode);
+        if (div) div.style.display = endpoint === 'vertex' ? 'block' : 'none';
+    };
+
+    async function updateRunningCostDisplay() {
+        const costs = await GetRunningCosts();
+        const total = (costs?.paid || 0) + (costs?.free || 0);
+        const el = document.getElementById('running-total-display');
+        if (el) {
+            el.innerText = `Total: $${total.toFixed(4)}`;
+            el.title = `Paid: $${(costs?.paid || 0).toFixed(4)} | Free Mode: $${(costs?.free || 0).toFixed(4)}`;
+        }
+    }
+
+    window.ResetRunningCost = async () => {
+        if (confirm("Are you sure you want to reset the running cost total?")) {
+            await ResetRunningCost();
+            addLog("Running cost total reset.");
         }
     };
     window.SelectAndAddMultipleImages = SelectAndAddMultipleImages;
@@ -451,8 +481,16 @@ function setupEventListeners() {
     window.SaveSettings = async () => {
         const c = state.config;
         c.return_thought = document.getElementById('settings-return-thought').checked;
+        c.persist_running_total = document.getElementById('settings-persist-running-total').checked;
         c.api_key_paid = document.getElementById('settings-api-key-paid').value;
+        c.api_endpoint_paid = document.getElementById('settings-api-endpoint-paid').value;
+        c.vertex_project_paid = document.getElementById('settings-vertex-project-paid').value;
+        c.vertex_region_paid = document.getElementById('settings-vertex-region-paid').value;
+
         c.api_key_free = document.getElementById('settings-api-key-free').value;
+        c.api_endpoint_free = document.getElementById('settings-api-endpoint-free').value;
+        c.vertex_project_free = document.getElementById('settings-vertex-project-free').value;
+        c.vertex_region_free = document.getElementById('settings-vertex-region-free').value;
         c.output_dir = document.getElementById('settings-output-dir').value;
         c.debug = document.getElementById('settings-debug').checked;
         c.default_prompt = document.getElementById('settings-default-prompt').value;
@@ -558,13 +596,24 @@ function populateSettings(c) {
     if (!c) return;
 
     document.getElementById('settings-return-thought').checked = !!c.return_thought;
+    document.getElementById('settings-persist-running-total').checked = !!c.persist_running_total;
 
     if (c.split_offset_main) {
         const left = document.getElementById('create-left');
         if (left) left.style.width = (c.split_offset_main * 100) + '%';
     }
     document.getElementById('settings-api-key-paid').value = c.api_key_paid || '';
+    document.getElementById('settings-api-endpoint-paid').value = c.api_endpoint_paid || 'cloud';
+    document.getElementById('settings-vertex-project-paid').value = c.vertex_project_paid || '';
+    document.getElementById('settings-vertex-region-paid').value = c.vertex_region_paid || 'us-central1';
+
     document.getElementById('settings-api-key-free').value = c.api_key_free || '';
+    document.getElementById('settings-api-endpoint-free').value = c.api_endpoint_free || 'cloud';
+    document.getElementById('settings-vertex-project-free').value = c.vertex_project_free || '';
+    document.getElementById('settings-vertex-region-free').value = c.vertex_region_free || 'us-central1';
+
+    window.ToggleVertexFields('paid');
+    window.ToggleVertexFields('free');
 
     document.getElementById('image-free-mode').checked = !!c.is_free_mode_image;
     document.getElementById('chat-free-mode').checked = !!c.is_free_mode_chat;

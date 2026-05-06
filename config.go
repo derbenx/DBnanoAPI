@@ -88,6 +88,13 @@ func LoadConfig() (*Config, error) {
 		cfg.ChatSystemPrompt = def.ChatSystemPrompt
 	}
 
+	if cfg.APIEndpointPaid == "" {
+		cfg.APIEndpointPaid = def.APIEndpointPaid
+	}
+	if cfg.APIEndpointFree == "" {
+		cfg.APIEndpointFree = def.APIEndpointFree
+	}
+
 	return &cfg, nil
 }
 
@@ -166,5 +173,11 @@ func DefaultConfig() *Config {
 		ChatMemorySlots:     3,
 		ChatSystemPrompt:    "You are a helpful and professional assistant. Keep your answers concise and accurate.",
 		ReturnThought:       false,
+
+		PersistRunningTotal: true,
+		APIEndpointPaid:     "cloud",
+		APIEndpointFree:     "cloud",
+		VertexRegionPaid:    "us-central1",
+		VertexRegionFree:    "us-central1",
 	}
 }

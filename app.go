@@ -62,6 +62,13 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.LoadJobs()
 
+	if !a.Config.PersistRunningTotal {
+		a.Mu.Lock()
+		a.Config.RunningCostPaid = 0
+		a.Config.RunningCostFree = 0
+		a.Mu.Unlock()
+	}
+
 	// Reset task states on startup
 	a.Mu.Lock()
 	a.RunningImmediate = 0
@@ -120,6 +127,40 @@ func (a *App) startup(ctx context.Context) {
 			runtime.EventsEmit(a.ctx, "batch_timer", int(remaining.Seconds()))
 		}
 	}()
+}
+
+func (a *App) IncrementRunningCost(amount float64, isFree bool) {
+	a.Mu.Lock()
+	if isFree {
+		a.Config.RunningCostFree += amount
+	} else {
+		a.Config.RunningCostPaid += amount
+	}
+	a.Mu.Unlock()
+
+	if a.Config.PersistRunningTotal {
+		a.SaveConfig(a.Config)
+	}
+	runtime.EventsEmit(a.ctx, "cost_updated")
+}
+
+func (a *App) ResetRunningCost() {
+	a.Mu.Lock()
+	a.Config.RunningCostPaid = 0
+	a.Config.RunningCostFree = 0
+	a.Mu.Unlock()
+
+	a.SaveConfig(a.Config)
+	runtime.EventsEmit(a.ctx, "cost_updated")
+}
+
+func (a *App) GetRunningCosts() map[string]float64 {
+	a.Mu.RLock()
+	defer a.Mu.RUnlock()
+	return map[string]float64{
+		"paid": a.Config.RunningCostPaid,
+		"free": a.Config.RunningCostFree,
+	}
 }
 
 func (a *App) GetConfig() *Config {

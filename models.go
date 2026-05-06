@@ -46,6 +46,18 @@ type Config struct {
 	ChatMemorySlots     int  `json:"chat_memory_slots"`
 	ChatSystemPrompt    string `json:"chat_system_prompt"`
 	ReturnThought       bool   `json:"return_thought"`
+
+	RunningCostPaid     float64 `json:"running_cost_paid"`
+	RunningCostFree     float64 `json:"running_cost_free"`
+	PersistRunningTotal bool    `json:"persist_running_total"`
+
+	APIEndpointPaid   string `json:"api_endpoint_paid"`
+	VertexProjectPaid string `json:"vertex_project_paid"`
+	VertexRegionPaid  string `json:"vertex_region_paid"`
+
+	APIEndpointFree   string `json:"api_endpoint_free"`
+	VertexProjectFree string `json:"vertex_project_free"`
+	VertexRegionFree  string `json:"vertex_region_free"`
 }
 
 type ImageInfo struct {
@@ -83,4 +95,6 @@ type BatchJob struct {
 	SubmittedAt time.Time
 	Progress    string
 	IsFree      bool
+	Agent       string  `json:"agent"`
+	CostPerTask float64 `json:"cost_per_task"`
 }

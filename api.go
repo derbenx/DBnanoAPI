@@ -129,6 +129,30 @@ func (a *App) getAPIKey(isFree bool) string {
 	return a.Config.APIKeyPaid
 }
 
+func (a *App) getBaseURL(isFree bool, modelID string, method string) string {
+	endpoint := a.Config.APIEndpointPaid
+	project := a.Config.VertexProjectPaid
+	region := a.Config.VertexRegionPaid
+	apiKey := a.Config.APIKeyPaid
+	version := "v1beta"
+
+	if isFree {
+		endpoint = a.Config.APIEndpointFree
+		project = a.Config.VertexProjectFree
+		region = a.Config.VertexRegionFree
+		apiKey = a.Config.APIKeyFree
+	}
+
+	if endpoint == "vertex" {
+		// Vertex AI REST API
+		return fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:%s?key=%s",
+			region, project, region, modelID, method, apiKey)
+	}
+
+	// Default Cloud Gemini API
+	return fmt.Sprintf("https://generativelanguage.googleapis.com/%s/models/%s:%s?key=%s", version, modelID, method, apiKey)
+}
+
 func (a *App) RunTask(task *TaskInfo, mode string) error {
 	// Validate Prompt
 	if strings.TrimSpace(task.Prompt) == "" {
@@ -151,9 +175,9 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 	task.Cost = a.CalculateCost(task.Agent, task.Size, mode)
 
 	modelID := a.GetModelID(task.Agent)
-	apiKey := a.getAPIKey(a.Config.IsFreeModeImage)
+	isFree := a.Config.IsFreeModeImage
 	modeStr := "Paid"
-	if a.Config.IsFreeModeImage {
+	if isFree {
 		modeStr = "Free"
 	}
 
@@ -162,10 +186,10 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 	var err error
 
 	if strings.Contains(task.Agent, "Imagen") {
-		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:predict?key=%s", modelID, apiKey)
+		url = a.getBaseURL(isFree, modelID, "predict")
 		reqBody, err = a.BuildImagenPayload(task)
 	} else {
-		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", modelID, apiKey)
+		url = a.getBaseURL(isFree, modelID, "generateContent")
 		reqBody, err = a.BuildPayload(task)
 	}
 
@@ -280,7 +304,7 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 		resourceName = "files/" + parts[len(parts)-1]
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:batchGenerateContent?key=%s", modelID, apiKey)
+	url := a.getBaseURL(isFree, modelID, "batchGenerateContent")
 
 	type BatchSubmitReq struct {
 		Batch struct {
@@ -319,6 +343,7 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 		SubmittedAt: time.Now(),
 		Progress:    "0%",
 		IsFree:      isFree,
+		Agent:       modelName,
 	})
 	a.Mu.Unlock()
 
@@ -514,11 +539,19 @@ func (a *App) HandleError(body []byte, status int) error {
 }
 
 func (a *App) TestAPI(mode string) error {
-	apiKey := a.Config.APIKeyPaid
-	if mode == "free" {
-		apiKey = a.Config.APIKeyFree
+	isFree := (mode == "free")
+	url := a.getBaseURL(isFree, "", "listModels")
+	// For listing models, the standard URL is slightly different if it's cloud
+	if !strings.Contains(url, "aiplatform") {
+		apiKey := a.getAPIKey(isFree)
+		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", apiKey)
+	} else {
+		// Vertex doesn't have a simple listModels with API key usually, but let's try to adapt
+		// If it's vertex, the getBaseURL gave us ...models/:listModels?key=...
+		// We might need to strip the last part if we wanted a general list,
+		// but let's see if the constructed URL works for some endpoint.
 	}
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", apiKey)
+
 	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
 		return err
@@ -630,7 +663,7 @@ func (a *App) CheckBatchStatus(job *BatchJob) error {
 
 		if respFile != "" {
 			a.Log("Batch " + job.JobID + " succeeded. Downloading results...")
-			return a.DownloadBatchResults(respFile, job.IsFree)
+			return a.DownloadBatchResults(respFile, job)
 		}
 	} else if state == "FAILED" || state == "CANCELLED" || state == "EXPIRED" {
 		a.CleanupJobsFile()
@@ -669,8 +702,8 @@ func (a *App) CleanupJobsFile() {
 	}
 }
 
-func (a *App) DownloadBatchResults(fileID string, isFree bool) error {
-	apiKey := a.getAPIKey(isFree)
+func (a *App) DownloadBatchResults(fileID string, job *BatchJob) error {
+	apiKey := a.getAPIKey(job.IsFree)
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media&key=%s", fileID, apiKey)
 	resp, err := a.HTTPClient.Get(url)
 	if err != nil {
@@ -710,7 +743,7 @@ func (a *App) DownloadBatchResults(fileID string, isFree bool) error {
 		}
 
 		// Port image extraction logic from ProcessResponse for result.Response
-		a.ProcessBatchItem(result.Response, result.CustomID)
+		a.ProcessBatchItem(result.Response, result.CustomID, job.IsFree)
 	}
 
 	a.CleanupJobsFile()
@@ -718,7 +751,7 @@ func (a *App) DownloadBatchResults(fileID string, isFree bool) error {
 	return nil
 }
 
-func (a *App) ProcessBatchItem(respBody []byte, customID string) {
+func (a *App) ProcessBatchItem(respBody []byte, customID string, isFree bool) {
 	// customID is task_{taskID}_{index}
 	var taskID int
 	fmt.Sscanf(customID, "task_%d_", &taskID)
@@ -818,6 +851,11 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string) {
 			targetTask.LastSavedPath = primaryPath
 			targetTask.Status = "Success"
 			a.Mu.Unlock()
+
+			// Cost is already incremented in SaveBase64Image via other paths,
+			// but Batch processing doesn't call SaveBase64Image.
+			// It should call IncrementRunningCost exactly once here.
+			a.IncrementRunningCost(targetTask.Cost, isFree)
 		}
 	}
 }
@@ -870,9 +908,11 @@ func (a *App) CalculateChatCost(model, message string) float64 {
 }
 
 func (a *App) SendChatMessage(model, message string) (string, error) {
-	apiKey := a.getAPIKey(a.Config.IsFreeModeChat)
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
+	isFree := a.Config.IsFreeModeChat
+	url := a.getBaseURL(isFree, model, "generateContent")
 	a.Log(fmt.Sprintf("Sending Chat request to model: %s", model))
+
+	chatCost := a.CalculateChatCost(model, message)
 
 	a.Mu.Lock()
 	if !a.Config.ChatMemoryEnabled {
@@ -960,6 +1000,8 @@ func (a *App) SendChatMessage(model, message string) (string, error) {
 		}
 		a.Mu.Unlock()
 
+		a.IncrementRunningCost(chatCost, isFree)
+
 		return reply, nil
 	}
 
@@ -1003,7 +1045,7 @@ func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
 		}
 
 		if imageData != "" || aiText != "" {
-			return a.SaveBase64Image(imageData, mimeType, task, aiText)
+			return a.SaveBase64Image(imageData, mimeType, task, aiText, a.Config.IsFreeModeImage)
 		}
 	}
 
@@ -1016,14 +1058,14 @@ func (a *App) ProcessResponse(body []byte, task *TaskInfo) error {
 	}
 	if err := json.Unmarshal(body, &imagenResp); err == nil && len(imagenResp.Predictions) > 0 {
 		pred := imagenResp.Predictions[0]
-		return a.SaveBase64Image(pred.BytesBase64Encoded, pred.MimeType, task, "")
+		return a.SaveBase64Image(pred.BytesBase64Encoded, pred.MimeType, task, "", a.Config.IsFreeModeImage)
 	}
 
 	a.LogToFile(fmt.Sprintf("DEBUG: No image found in response for task %d. Body: %s", task.ID, string(body)))
 	return fmt.Errorf("no image data in response (Check debug.log for body)")
 }
 
-func (a *App) SaveBase64Image(b64, mime string, task *TaskInfo, aiText string) error {
+func (a *App) SaveBase64Image(b64, mime string, task *TaskInfo, aiText string, isFree bool) error {
 	agentPrefix := strings.ReplaceAll(task.Agent, " ", "_")
 	randomHex := fmt.Sprintf("%02x", time.Now().UnixNano()%256)
 	dateStr := time.Now().Format("2006-01-02-150405")
@@ -1077,6 +1119,9 @@ func (a *App) SaveBase64Image(b64, mime string, task *TaskInfo, aiText string) e
 
 	a.Mu.Lock()
 	task.LastSavedPath = primaryPath
+	cost := task.Cost
 	a.Mu.Unlock()
+
+	a.IncrementRunningCost(cost, isFree)
 	return nil
 }

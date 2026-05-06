@@ -31,6 +31,16 @@ body {
     background-color: var(--sidebar-bg);
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
+    align-items: center;
+}
+
+.running-total-container {
+    padding: 0 20px;
+    font-weight: bold;
+    color: #f1c40f;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
 }
 
 .tab {
