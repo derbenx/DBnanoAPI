@@ -1,4 +1,3 @@
-import './style.css';
 import {
     GetImages,
     GetTasks,
@@ -54,7 +53,38 @@ let state = {
 
 // --- Initialization ---
 
+async function updateRunningCostDisplay() {
+    const costs = await GetRunningCosts();
+    const total = (costs?.paid || 0) + (costs?.free || 0);
+    const el = document.getElementById('running-total-display');
+    if (el) {
+        el.innerText = `Total: $${total.toFixed(4)}`;
+        el.title = `Paid: $${(costs?.paid || 0).toFixed(4)} | Free Mode: $${(costs?.free || 0).toFixed(4)}`;
+    }
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
+    // Global Exposure
+    window.TogglePassword = (id) => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+    };
+
+    window.ToggleVertexFields = (mode) => {
+        const endpoint = document.getElementById('settings-api-endpoint-' + mode).value;
+        const div = document.getElementById('vertex-fields-' + mode);
+        if (div) div.style.display = endpoint === 'vertex' ? 'block' : 'none';
+    };
+
+    window.ResetRunningCost = async () => {
+        if (confirm("Are you sure you want to reset the running cost total?")) {
+            await ResetRunningCost();
+            addLog("Running cost total reset.");
+        }
+    };
+
     try {
         state.config = await GetConfig();
         await updateRunningCostDisplay();
@@ -204,36 +234,6 @@ function setupEventListeners() {
         };
     }
 
-    // Global Exposure
-    window.TogglePassword = (id) => {
-        const input = document.getElementById(id);
-        if (input) {
-            input.type = input.type === 'password' ? 'text' : 'password';
-        }
-    };
-
-    window.ToggleVertexFields = (mode) => {
-        const endpoint = document.getElementById('settings-api-endpoint-' + mode).value;
-        const div = document.getElementById('vertex-fields-' + mode);
-        if (div) div.style.display = endpoint === 'vertex' ? 'block' : 'none';
-    };
-
-    async function updateRunningCostDisplay() {
-        const costs = await GetRunningCosts();
-        const total = (costs?.paid || 0) + (costs?.free || 0);
-        const el = document.getElementById('running-total-display');
-        if (el) {
-            el.innerText = `Total: $${total.toFixed(4)}`;
-            el.title = `Paid: $${(costs?.paid || 0).toFixed(4)} | Free Mode: $${(costs?.free || 0).toFixed(4)}`;
-        }
-    }
-
-    window.ResetRunningCost = async () => {
-        if (confirm("Are you sure you want to reset the running cost total?")) {
-            await ResetRunningCost();
-            addLog("Running cost total reset.");
-        }
-    };
     window.SelectAndAddMultipleImages = SelectAndAddMultipleImages;
     window.CreateNewImage = CreateNewImage;
     window.GetDefaultConfig = GetDefaultConfig;
