@@ -336,6 +336,8 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 		return err
 	}
 
+	costPerTask := a.CalculateCost(modelName, tasks[0].Size, "Batch")
+
 	a.Mu.Lock()
 	a.BatchJobs = append(a.BatchJobs, &BatchJob{
 		JobID:       res.Name,
@@ -344,12 +346,17 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 		Progress:    "0%",
 		IsFree:      isFree,
 		Agent:       modelName,
+		CostPerTask: costPerTask,
 	})
+	// Also update the individual task costs to the batch rate
+	for _, t := range tasks {
+		t.Cost = costPerTask
+	}
 	a.Mu.Unlock()
 
 	a.Log("Batch Job Submitted: " + res.Name)
 
-	// Persist to jobs.txt
+	// Persist to jobs.json
 	a.CleanupJobsFile()
 
 	return nil
@@ -673,32 +680,28 @@ func (a *App) CheckBatchStatus(job *BatchJob) error {
 
 func (a *App) CleanupJobsFile() {
 	a.Mu.RLock()
-	var lines []string
+	var activeJobs []*BatchJob
 	for _, job := range a.BatchJobs {
 		s := strings.ToUpper(job.Status)
 		if s != "SUCCEEDED" && s != "FAILED" && s != "CANCELLED" && s != "EXPIRED" && s != "SUCCESS" {
-			mode := "paid"
-			if job.IsFree {
-				mode = "free"
-			}
-			lines = append(lines, fmt.Sprintf("%s|%s", job.JobID, mode))
+			activeJobs = append(activeJobs, job)
 		}
 	}
 	a.Mu.RUnlock()
 
-	if len(lines) == 0 {
-		os.Remove("jobs.txt")
+	if len(activeJobs) == 0 {
+		os.Remove("jobs.json")
 		return
 	}
 
-	f, err := os.Create("jobs.txt")
+	data, err := json.MarshalIndent(activeJobs, "", "  ")
 	if err != nil {
+		a.Log("Error marshaling jobs: " + err.Error())
 		return
 	}
-	defer f.Close()
 
-	for _, line := range lines {
-		f.WriteString(line + "\n")
+	if err := os.WriteFile("jobs.json", data, 0644); err != nil {
+		a.Log("Error saving jobs.json: " + err.Error())
 	}
 }
 
@@ -743,7 +746,7 @@ func (a *App) DownloadBatchResults(fileID string, job *BatchJob) error {
 		}
 
 		// Port image extraction logic from ProcessResponse for result.Response
-		a.ProcessBatchItem(result.Response, result.CustomID, job.IsFree)
+		a.ProcessBatchItem(result.Response, result.CustomID, job)
 	}
 
 	a.CleanupJobsFile()
@@ -751,7 +754,7 @@ func (a *App) DownloadBatchResults(fileID string, job *BatchJob) error {
 	return nil
 }
 
-func (a *App) ProcessBatchItem(respBody []byte, customID string, isFree bool) {
+func (a *App) ProcessBatchItem(respBody []byte, customID string, job *BatchJob) {
 	// customID is task_{taskID}_{index}
 	var taskID int
 	fmt.Sscanf(customID, "task_%d_", &taskID)
@@ -783,10 +786,6 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string, isFree bool) {
 		}
 		a.Mu.Unlock()
 
-		if targetTask == nil {
-			return
-		}
-
 		var imageData []byte
 		var mimeType string
 		var aiText string
@@ -801,7 +800,14 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string, isFree bool) {
 		}
 
 		if imageData != nil || aiText != "" {
-			agentPrefix := strings.ReplaceAll(targetTask.Agent, " ", "_")
+			agentName := job.Agent
+			returnThought := false
+			if targetTask != nil {
+				agentName = targetTask.Agent
+				returnThought = targetTask.ReturnThought
+			}
+
+			agentPrefix := strings.ReplaceAll(agentName, " ", "_")
 			randomHex := fmt.Sprintf("%02x", time.Now().UnixNano()%256)
 			dateStr := time.Now().Format("2006-01-02-150405")
 			os.MkdirAll(a.Config.OutputDir, 0755)
@@ -818,12 +824,12 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string, isFree bool) {
 				primaryPath = filepath.Join(a.Config.OutputDir, fileName)
 
 				if err := os.WriteFile(primaryPath, imageData, 0644); err != nil {
-					a.Log(fmt.Sprintf("Error saving image for task %d: %v", targetTask.ID, err))
+					a.Log(fmt.Sprintf("Error saving image for task %d: %v", taskID, err))
 				} else {
-					a.Log(fmt.Sprintf("Saved task %d image: %s", targetTask.ID, primaryPath))
+					a.Log(fmt.Sprintf("Saved task %d image: %s", taskID, primaryPath))
 				}
 
-				if targetTask.ReturnThought {
+				if returnThought {
 					if aiText != "" {
 						txtPath := primaryPath[:len(primaryPath)-len(ext)-1] + ".txt"
 						if err := os.WriteFile(txtPath, []byte(aiText), 0644); err != nil {
@@ -832,7 +838,7 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string, isFree bool) {
 							a.Log("Saved AI thoughts: " + txtPath)
 						}
 					} else {
-						a.Log(fmt.Sprintf("Warning: Thought process requested for task %d but no text was returned.", targetTask.ID))
+						a.Log(fmt.Sprintf("Warning: Thought process requested for task %d but no text was returned.", taskID))
 					}
 				}
 			} else {
@@ -841,21 +847,26 @@ func (a *App) ProcessBatchItem(respBody []byte, customID string, isFree bool) {
 				primaryPath = filepath.Join(a.Config.OutputDir, fileName)
 
 				if err := os.WriteFile(primaryPath, []byte(aiText), 0644); err != nil {
-					a.Log(fmt.Sprintf("Error saving text response for task %d: %v", targetTask.ID, err))
+					a.Log(fmt.Sprintf("Error saving text response for task %d: %v", taskID, err))
 				} else {
-					a.Log(fmt.Sprintf("Saved task %d AI response (text only): %s", targetTask.ID, primaryPath))
+					a.Log(fmt.Sprintf("Saved task %d AI response (text only): %s", taskID, primaryPath))
 				}
 			}
 
-			a.Mu.Lock()
-			targetTask.LastSavedPath = primaryPath
-			targetTask.Status = "Success"
-			a.Mu.Unlock()
+			if targetTask != nil {
+				a.Mu.Lock()
+				targetTask.LastSavedPath = primaryPath
+				targetTask.Status = "Success"
+				a.Mu.Unlock()
+			}
 
-			// Cost is already incremented in SaveBase64Image via other paths,
-			// but Batch processing doesn't call SaveBase64Image.
-			// It should call IncrementRunningCost exactly once here.
-			a.IncrementRunningCost(targetTask.Cost, isFree)
+			// Use job's CostPerTask if available
+			cost := job.CostPerTask
+			if cost == 0 && targetTask != nil {
+				cost = targetTask.Cost
+			}
+
+			a.IncrementRunningCost(cost, job.IsFree)
 		}
 	}
 }

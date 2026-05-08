@@ -90,11 +90,11 @@ type TaskInfo struct {
 }
 
 type BatchJob struct {
-	JobID       string
-	Status      string
-	SubmittedAt time.Time
-	Progress    string
-	IsFree      bool
-	Agent       string  `json:"agent"`
-	CostPerTask float64 `json:"cost_per_task"`
+	JobID       string    `json:"job_id"`
+	Status      string    `json:"status"`
+	SubmittedAt time.Time `json:"submitted_at"`
+	Progress    string    `json:"progress"`
+	IsFree      bool      `json:"is_free"`
+	Agent       string    `json:"agent"`
+	CostPerTask float64   `json:"cost_per_task"`
 }

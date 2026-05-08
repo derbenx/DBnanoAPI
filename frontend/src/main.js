@@ -55,12 +55,22 @@ let state = {
 
 async function updateRunningCostDisplay() {
     const costs = await GetRunningCosts();
-    const total = (costs?.paid || 0) + (costs?.free || 0);
     const el = document.getElementById('running-total-display');
-    if (el) {
-        el.innerText = `Total: $${total.toFixed(4)}`;
-        el.title = `Paid: $${(costs?.paid || 0).toFixed(4)} | Free Mode: $${(costs?.free || 0).toFixed(4)}`;
+    if (!el) return;
+
+    let isFree = false;
+    if (state.activeTab === 'chat') {
+        isFree = document.getElementById('chat-free-mode').checked;
+    } else {
+        // Default to image mode checkbox for Create and other tabs
+        isFree = document.getElementById('image-free-mode').checked;
     }
+
+    const val = isFree ? (costs?.free || 0) : (costs?.paid || 0);
+    const label = isFree ? "(Free Mode)" : "(Paid)";
+
+    el.innerText = `${label} Total: $${val.toFixed(4)}`;
+    el.title = `Paid: $${(costs?.paid || 0).toFixed(4)} | Free Mode: $${(costs?.free || 0).toFixed(4)}`;
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -79,9 +89,16 @@ window.addEventListener('DOMContentLoaded', async () => {
     };
 
     window.ResetRunningCost = async () => {
-        if (confirm("Are you sure you want to reset the running cost total?")) {
-            await ResetRunningCost();
-            addLog("Running cost total reset.");
+        let isFree = false;
+        if (state.activeTab === 'chat') {
+            isFree = document.getElementById('chat-free-mode').checked;
+        } else {
+            isFree = document.getElementById('image-free-mode').checked;
+        }
+        const label = isFree ? "Free Mode" : "Paid";
+        if (confirm(`Are you sure you want to reset the ${label} running cost total?`)) {
+            await ResetRunningCost(isFree);
+            addLog(`${label} running cost total reset.`);
         }
     };
 
@@ -202,6 +219,7 @@ function setupEventListeners() {
             if (state.activeTab === 'chat' || state.activeTab === 'settings' || state.activeTab === 'help') { hider='none'; }
             logs.style.display = hider;
 
+            updateRunningCostDisplay();
             renderAll();
         });
     });
@@ -246,6 +264,7 @@ function setupEventListeners() {
         }
         await SaveConfig(state.config);
         addLog(`Free Mode (${type}) ${enabled ? 'Enabled' : 'Disabled'}`);
+        await updateRunningCostDisplay();
     };
     window.UpdateChatConfig = async () => {
         state.config.chat_memory_enabled = document.getElementById('chat-memory-enabled').checked;

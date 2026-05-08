@@ -144,10 +144,13 @@ func (a *App) IncrementRunningCost(amount float64, isFree bool) {
 	runtime.EventsEmit(a.ctx, "cost_updated")
 }
 
-func (a *App) ResetRunningCost() {
+func (a *App) ResetRunningCost(isFree bool) {
 	a.Mu.Lock()
-	a.Config.RunningCostPaid = 0
-	a.Config.RunningCostFree = 0
+	if isFree {
+		a.Config.RunningCostFree = 0
+	} else {
+		a.Config.RunningCostPaid = 0
+	}
 	a.Mu.Unlock()
 
 	a.SaveConfig(a.Config)
@@ -220,6 +223,21 @@ func (a *App) LogToFile(msg string) {
 }
 
 func (a *App) LoadJobs() {
+	// Try jobs.json first
+	data, err := os.ReadFile("jobs.json")
+	if err == nil {
+		var jobs []*BatchJob
+		if err := json.Unmarshal(data, &jobs); err == nil {
+			a.Mu.Lock()
+			a.BatchJobs = jobs
+			count := len(a.BatchJobs)
+			a.Mu.Unlock()
+			a.Log(fmt.Sprintf("Loaded %d batch jobs from jobs.json", count))
+			return
+		}
+	}
+
+	// Legacy fallback: jobs.txt
 	f, err := os.Open("jobs.txt")
 	if err != nil {
 		return
@@ -249,7 +267,9 @@ func (a *App) LoadJobs() {
 	}
 	count := len(a.BatchJobs)
 	a.Mu.Unlock()
-	a.Log(fmt.Sprintf("Loaded %d batch jobs from jobs.txt", count))
+	a.Log(fmt.Sprintf("Loaded %d batch jobs from legacy jobs.txt", count))
+	// Convert legacy to new format immediately
+	a.CleanupJobsFile()
 }
 
 func (a *App) ProcessDroppedFiles(paths []string) {
