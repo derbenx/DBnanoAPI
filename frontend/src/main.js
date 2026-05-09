@@ -966,15 +966,15 @@ function renderBatchList() {
         item.className = 'batch-item';
         item.style = 'background-color: #151d29; border: 1px solid #34495e; padding: 15px; margin-bottom: 10px; border-radius: 8px;';
 
-        const isFinished = ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED", "Success", "Failed"].includes(job.Status);
-        const progress = isFinished ? 100 : (job.Status === "Submitted" ? 10 : 50); // Dummy progress for now as API doesn't provide it clearly in percentage
+        const isFinished = ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED", "Success", "Failed"].includes(job.status);
+        const progress = isFinished ? 100 : (job.status === "Submitted" ? 10 : 50); // Dummy progress for now as API doesn't provide it clearly in percentage
 
         item.innerHTML = `
             <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <span style="font-weight: bold; color: #3498db;">${job.JobID}</span>
-                <span style="color: ${isFinished ? (job.Status === 'SUCCEEDED' ? '#2ecc71' : '#e74c3c') : '#f1c40f'}">${job.Status}</span>
+                <span style="font-weight: bold; color: #3498db;">${job.job_id}</span>
+                <span style="color: ${isFinished ? (['SUCCEEDED', 'Success'].includes(job.status) ? '#2ecc71' : '#e74c3c') : '#f1c40f'}">${job.status}</span>
             </div>
-            <div style="font-size: 0.85em; color: #888; margin-bottom: 10px;">Submitted at: ${new Date(job.SubmittedAt).toLocaleString()}</div>
+            <div style="font-size: 0.85em; color: #888; margin-bottom: 10px;">Submitted at: ${new Date(job.submitted_at).toLocaleString()}</div>
             <div class="progress-bar-bg" style="background-color: #2c3e50; height: 10px; border-radius: 5px; overflow: hidden;">
                 <div class="progress-bar-fill" style="background-color: #3498db; width: ${progress}%; height: 100%; transition: width 0.3s;"></div>
             </div>
