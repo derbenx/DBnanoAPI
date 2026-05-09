@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,7 +96,7 @@ func LoadConfig() (*Config, error) {
 		cfg.APIEndpointFree = def.APIEndpointFree
 	}
 
-	return &cfg, nil
+	return cfg, nil
 }
 
 func SaveConfig(cfg *Config) error {
