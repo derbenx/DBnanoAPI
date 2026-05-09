@@ -179,6 +179,9 @@ func (a *App) GetDefaultConfig() *Config {
 
 func (a *App) SaveConfig(cfg *Config) error {
 	a.Mu.Lock()
+	// Preserve current totals maintained by backend
+	cfg.RunningCostPaid = a.Config.RunningCostPaid
+	cfg.RunningCostFree = a.Config.RunningCostFree
 	a.Config = cfg
 	a.Mu.Unlock()
 	return SaveConfig(cfg)

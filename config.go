@@ -24,8 +24,8 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	var cfg Config
-	err = json.Unmarshal(data, &cfg)
+	cfg := DefaultConfig()
+	err = json.Unmarshal(data, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -102,9 +102,14 @@ func SaveConfig(cfg *Config) error {
 	path := GetConfigPath()
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
+		fmt.Println("Error marshaling config:", err)
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	err = os.WriteFile(path, data, 0644)
+	if err != nil {
+		fmt.Println("Error writing config file:", err)
+	}
+	return err
 }
 
 func DefaultConfig() *Config {
