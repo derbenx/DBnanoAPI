@@ -259,7 +259,6 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 	modelName := tasks[0].Agent
 	modelID := a.GetModelID(modelName)
 	isFree := a.Config.IsFreeModeImage
-	apiKey := a.getAPIKey(isFree)
 
 	// 1. Create JSONL data
 	var buf bytes.Buffer
