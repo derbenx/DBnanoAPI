@@ -4,20 +4,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 const configFileName = "config.json"
 
 func GetConfigPath() string {
+	execPath, err := os.Executable()
+	if err == nil {
+		path := filepath.Join(filepath.Dir(execPath), configFileName)
+		// Check if we can write to this directory, otherwise fallback to current dir
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0666)
+		if err == nil {
+			f.Close()
+			return path
+		}
+	}
 	return configFileName
 }
 
 func LoadConfig() (*Config, error) {
 	path := GetConfigPath()
+	fmt.Printf("Loading config from: %s\n", path)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			fmt.Println("Config file not found, using defaults.")
 			return DefaultConfig(), nil
 		}
 		return nil, err

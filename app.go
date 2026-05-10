@@ -63,11 +63,15 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.LoadJobs()
 
+	a.Log(fmt.Sprintf("Startup: PersistRunningTotal is %v", a.Config.PersistRunningTotal))
 	if !a.Config.PersistRunningTotal {
+		a.Log("Startup: Resetting running totals to 0 per config.")
 		a.Mu.Lock()
 		a.Config.RunningCostPaid = 0
 		a.Config.RunningCostFree = 0
 		a.Mu.Unlock()
+	} else {
+		a.Log(fmt.Sprintf("Startup: Loaded running totals - Paid: $%v, Free: $%v", a.Config.RunningCostPaid, a.Config.RunningCostFree))
 	}
 
 	// Reset task states on startup
@@ -138,7 +142,10 @@ func (a *App) IncrementRunningCost(amount float64, isFree bool) {
 		a.Config.RunningCostPaid += amount
 	}
 	persist := a.Config.PersistRunningTotal
+	paid, free := a.Config.RunningCostPaid, a.Config.RunningCostFree
 	a.Mu.Unlock()
+
+	a.Log(fmt.Sprintf("Cost incremented: +$%v (isFree: %v). New totals - Paid: $%v, Free: $%v", amount, isFree, paid, free))
 
 	if persist {
 		err := a.SaveConfig(a.Config)
@@ -192,7 +199,7 @@ func (a *App) SaveConfig(cfg *Config) error {
 	a.Mu.Unlock()
 	err := SaveConfig(cfg)
 	if err == nil {
-		a.Log("Configuration saved successfully.")
+		a.Log(fmt.Sprintf("Configuration saved successfully. Totals - Paid: $%v, Free: $%v", cfg.RunningCostPaid, cfg.RunningCostFree))
 	} else {
 		a.Log("Failed to save configuration: " + err.Error())
 	}
