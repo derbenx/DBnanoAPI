@@ -11,22 +11,36 @@ import (
 const configFileName = "config.json"
 
 func GetConfigPath() string {
-	execPath, err := os.Executable()
-	if err == nil {
+	// 1. Try Current Working Directory first (most predictable for dev/testing)
+	if _, err := os.Stat(configFileName); err == nil {
+		abs, _ := filepath.Abs(configFileName)
+		return abs
+	}
+
+	// 2. Try Executable Directory (standard for bundled apps)
+	if execPath, err := os.Executable(); err == nil {
 		path := filepath.Join(filepath.Dir(execPath), configFileName)
-		// Check if we can write to this directory, otherwise fallback to current dir
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0666)
-		if err == nil {
-			f.Close()
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+		// Check writability of exec dir
+		dir := filepath.Dir(path)
+		testFile := filepath.Join(dir, ".nano_write_test")
+		if err := os.WriteFile(testFile, []byte("test"), 0644); err == nil {
+			os.Remove(testFile)
 			return path
 		}
 	}
-	return configFileName
+
+	// 3. Final Fallback to Current Working Directory
+	abs, _ := filepath.Abs(configFileName)
+	return abs
 }
 
 func LoadConfig() (*Config, error) {
 	path := GetConfigPath()
-	fmt.Printf("Loading config from: %s\n", path)
+	abs, _ := filepath.Abs(path)
+	fmt.Printf("Loading config from: %s\n", abs)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -39,8 +53,10 @@ func LoadConfig() (*Config, error) {
 	cfg := DefaultConfig()
 	err = json.Unmarshal(data, cfg)
 	if err != nil {
+		fmt.Printf("Error unmarshaling config from %s: %v\n", abs, err)
 		return nil, err
 	}
+	fmt.Printf("Config loaded. Paid: %v, Free: %v, Persist: %v\n", cfg.RunningCostPaid, cfg.RunningCostFree, cfg.PersistRunningTotal)
 
 	// Migration and Fill in defaults
 	def := DefaultConfig()
@@ -112,14 +128,20 @@ func LoadConfig() (*Config, error) {
 
 func SaveConfig(cfg *Config) error {
 	path := GetConfigPath()
+	absPath, _ := filepath.Abs(path)
+	fmt.Printf("Saving config to: %s\n", absPath)
+
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		fmt.Println("Error marshaling config:", err)
 		return err
 	}
+
 	err = os.WriteFile(path, data, 0644)
 	if err != nil {
-		fmt.Println("Error writing config file:", err)
+		fmt.Printf("Error writing config file to %s: %v\n", absPath, err)
+	} else {
+		fmt.Printf("Config successfully saved to %s (%d bytes)\n", absPath, len(data))
 	}
 	return err
 }

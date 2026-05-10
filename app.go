@@ -63,7 +63,10 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.LoadJobs()
 
+	absPath, _ := filepath.Abs(GetConfigPath())
+	a.Log(fmt.Sprintf("Startup: Using config at %s", absPath))
 	a.Log(fmt.Sprintf("Startup: PersistRunningTotal is %v", a.Config.PersistRunningTotal))
+
 	if !a.Config.PersistRunningTotal {
 		a.Log("Startup: Resetting running totals to 0 per config.")
 		a.Mu.Lock()
