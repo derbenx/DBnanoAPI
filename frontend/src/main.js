@@ -180,6 +180,7 @@ function setupEventListeners() {
     });
 
     EventsOn("cost_updated", async () => {
+        state.config = await GetConfig();
         await updateRunningCostDisplay();
     });
 

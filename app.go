@@ -137,10 +137,14 @@ func (a *App) IncrementRunningCost(amount float64, isFree bool) {
 	} else {
 		a.Config.RunningCostPaid += amount
 	}
+	persist := a.Config.PersistRunningTotal
 	a.Mu.Unlock()
 
-	if a.Config.PersistRunningTotal {
-		a.SaveConfig(a.Config)
+	if persist {
+		err := a.SaveConfig(a.Config)
+		if err != nil {
+			a.Log("Error persisting running total: " + err.Error())
+		}
 	}
 	runtime.EventsEmit(a.ctx, "cost_updated")
 }
@@ -179,12 +183,20 @@ func (a *App) GetDefaultConfig() *Config {
 
 func (a *App) SaveConfig(cfg *Config) error {
 	a.Mu.Lock()
-	// Preserve current totals maintained by backend
-	cfg.RunningCostPaid = a.Config.RunningCostPaid
-	cfg.RunningCostFree = a.Config.RunningCostFree
+	// Preserve current totals maintained by backend IF the incoming cfg is different
+	if cfg != a.Config {
+		cfg.RunningCostPaid = a.Config.RunningCostPaid
+		cfg.RunningCostFree = a.Config.RunningCostFree
+	}
 	a.Config = cfg
 	a.Mu.Unlock()
-	return SaveConfig(cfg)
+	err := SaveConfig(cfg)
+	if err == nil {
+		a.Log("Configuration saved successfully.")
+	} else {
+		a.Log("Failed to save configuration: " + err.Error())
+	}
+	return err
 }
 
 func (a *App) GetImages() []*ImageInfo {

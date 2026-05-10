@@ -4,15 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
 const configFileName = "config.json"
 
 func GetConfigPath() string {
-	execPath, _ := os.Executable()
-	return filepath.Join(filepath.Dir(execPath), configFileName)
+	return configFileName
 }
 
 func LoadConfig() (*Config, error) {
