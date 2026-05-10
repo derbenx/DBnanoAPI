@@ -129,28 +129,36 @@ func (a *App) getAPIKey(isFree bool) string {
 	return a.Config.APIKeyPaid
 }
 
+func (a *App) doRequest(req *http.Request, isFree bool) (*http.Response, error) {
+	apiKey := a.getAPIKey(isFree)
+	req.Header.Set("X-Goog-Api-Key", apiKey)
+	if req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return a.HTTPClient.Do(req)
+}
+
 func (a *App) getBaseURL(isFree bool, modelID string, method string) string {
 	endpoint := a.Config.APIEndpointPaid
 	project := a.Config.VertexProjectPaid
 	region := a.Config.VertexRegionPaid
-	apiKey := a.Config.APIKeyPaid
 	version := "v1beta"
 
 	if isFree {
 		endpoint = a.Config.APIEndpointFree
 		project = a.Config.VertexProjectFree
 		region = a.Config.VertexRegionFree
-		apiKey = a.Config.APIKeyFree
 	}
 
 	if endpoint == "vertex" {
 		// Vertex AI REST API
-		return fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:%s?key=%s",
-			region, project, region, modelID, method, apiKey)
+		// API Keys are supported on v1beta1 and v1 for some regions, but v1beta1 is safer for newer features.
+		return fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1beta1/projects/%s/locations/%s/publishers/google/models/%s:%s",
+			region, project, region, modelID, method)
 	}
 
 	// Default Cloud Gemini API
-	return fmt.Sprintf("https://generativelanguage.googleapis.com/%s/models/%s:%s?key=%s", version, modelID, method, apiKey)
+	return fmt.Sprintf("https://generativelanguage.googleapis.com/%s/models/%s:%s", version, modelID, method)
 }
 
 func (a *App) RunTask(task *TaskInfo, mode string) error {
@@ -201,7 +209,8 @@ func (a *App) RunTask(task *TaskInfo, mode string) error {
 	a.Log(fmt.Sprintf("Sending API request for task %d (Model: %s, Billing: %s)", task.ID, modelID, modeStr))
 	a.LogToFile(fmt.Sprintf("Task %d Payload: %s", task.ID, string(reqBody)))
 
-	resp, err := a.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	resp, err := a.doRequest(req, isFree)
 	if err != nil {
 		a.Log(fmt.Sprintf("Network error for task %d: %v", task.ID, err))
 		return err
@@ -292,7 +301,7 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 	}
 
 	// 2. Upload JSONL to Google Files API
-	fileURI, err := a.UploadFile(buf.Bytes(), apiKey)
+	fileURI, err := a.UploadFile(buf.Bytes(), isFree)
 	if err != nil {
 		return fmt.Errorf("upload failed: %v", err)
 	}
@@ -318,7 +327,8 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 	submitReq.Batch.InputConfig.FileName = resourceName
 	reqBody, _ := json.Marshal(submitReq)
 
-	resp, err := a.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	resp, err := a.doRequest(req, isFree)
 	if err != nil {
 		return err
 	}
@@ -362,8 +372,8 @@ func (a *App) SubmitBatchJob(tasks []*TaskInfo) error {
 	return nil
 }
 
-func (a *App) UploadFile(data []byte, apiKey string) (string, error) {
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/upload/v1beta/files?key=%s", apiKey)
+func (a *App) UploadFile(data []byte, isFree bool) (string, error) {
+	url := "https://generativelanguage.googleapis.com/upload/v1beta/files"
 
 	boundary := "NanoGoBoundary" + fmt.Sprint(time.Now().Unix())
 	body := &bytes.Buffer{}
@@ -389,7 +399,7 @@ func (a *App) UploadFile(data []byte, apiKey string) (string, error) {
 	req.Header.Set("X-Goog-Upload-Protocol", "multipart")
 	req.Header.Set("Content-Type", "multipart/related; boundary="+boundary)
 
-	resp, err := a.HTTPClient.Do(req)
+	resp, err := a.doRequest(req, isFree)
 	if err != nil {
 		return "", err
 	}
@@ -547,19 +557,42 @@ func (a *App) HandleError(body []byte, status int) error {
 
 func (a *App) TestAPI(mode string) error {
 	isFree := (mode == "free")
-	url := a.getBaseURL(isFree, "", "listModels")
-	// For listing models, the standard URL is slightly different if it's cloud
-	if !strings.Contains(url, "aiplatform") {
-		apiKey := a.getAPIKey(isFree)
-		url = fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", apiKey)
-	} else {
-		// Vertex doesn't have a simple listModels with API key usually, but let's try to adapt
-		// If it's vertex, the getBaseURL gave us ...models/:listModels?key=...
-		// We might need to strip the last part if we wanted a general list,
-		// but let's see if the constructed URL works for some endpoint.
+	url := "https://generativelanguage.googleapis.com/v1beta/models"
+
+	endpoint := a.Config.APIEndpointPaid
+	if isFree {
+		endpoint = a.Config.APIEndpointFree
 	}
 
-	resp, err := a.HTTPClient.Get(url)
+	if endpoint == "vertex" {
+		// Use a lightweight "countTokens" call or similar to test Vertex AI
+		// Listing models is often restricted.
+		modelID := a.Config.ModelNanoFlash
+		if modelID == "" {
+			modelID = "gemini-2.5-flash-image"
+		}
+		url = a.getBaseURL(isFree, modelID, "countTokens")
+
+		type CountReq struct {
+			Contents []Content `json:"contents"`
+		}
+		reqBody, _ := json.Marshal(CountReq{Contents: []Content{{Parts: []Part{{Text: "test"}}}}})
+		httpReq, _ := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+		resp, err := a.doRequest(httpReq, isFree)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 {
+			return a.HandleError(body, resp.StatusCode)
+		}
+		a.Log("Vertex AI Connection successful (token count test).")
+		return nil
+	}
+
+	req, _ := http.NewRequest("GET", url, nil)
+	resp, err := a.doRequest(req, isFree)
 	if err != nil {
 		return err
 	}
@@ -626,9 +659,9 @@ func (a *App) findJSONString(data interface{}, targetKey string) string {
 }
 
 func (a *App) CheckBatchStatus(job *BatchJob) error {
-	apiKey := a.getAPIKey(job.IsFree)
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s?key=%s", job.JobID, apiKey)
-	resp, err := a.HTTPClient.Get(url)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s", job.JobID)
+	req, _ := http.NewRequest("GET", url, nil)
+	resp, err := a.doRequest(req, job.IsFree)
 	if err != nil {
 		return err
 	}
@@ -706,9 +739,9 @@ func (a *App) CleanupJobsFile() {
 }
 
 func (a *App) DownloadBatchResults(fileID string, job *BatchJob) error {
-	apiKey := a.getAPIKey(job.IsFree)
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media&key=%s", fileID, apiKey)
-	resp, err := a.HTTPClient.Get(url)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/%s:download?alt=media", fileID)
+	req, _ := http.NewRequest("GET", url, nil)
+	resp, err := a.doRequest(req, job.IsFree)
 	if err != nil {
 		return err
 	}
@@ -975,7 +1008,8 @@ func (a *App) SendChatMessage(model, message string) (string, error) {
 	}
 
 	reqBody, _ := json.Marshal(req)
-	resp, err := a.HTTPClient.Post(url, "application/json", bytes.NewBuffer(reqBody))
+	httpReq, _ := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	resp, err := a.doRequest(httpReq, isFree)
 	if err != nil {
 		return "", err
 	}
